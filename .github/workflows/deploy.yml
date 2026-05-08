@@ -29,6 +29,17 @@ jobs:
       - name: Publish (Blazor WASM standalone)
         run: dotnet publish Quitto.csproj -c Release -o release --nologo
 
+      # PNG icons : svgexport (Node) convertit le SVG vectoriel en PNG aux tailles
+      # attendues par iOS (apple-touch-icon 180), Android (192/512) et Open Graph (1200×630).
+      # Indispensable pour iOS PWA — Safari ne supporte pas les icônes SVG dans manifest.
+      - name: Generate PNG icons & OG image from SVG
+        run: |
+          npx --yes svgexport release/wwwroot/icon.svg      release/wwwroot/icon-180.png 180:180
+          npx --yes svgexport release/wwwroot/icon.svg      release/wwwroot/icon-192.png 192:192
+          npx --yes svgexport release/wwwroot/icon.svg      release/wwwroot/icon-512.png 512:512
+          npx --yes svgexport release/wwwroot/og-image.svg  release/wwwroot/og-image.png 1200:630
+          ls -la release/wwwroot/icon-*.png release/wwwroot/og-image.png
+
       # GitHub Pages servira l'app sous /<repo>/, il faut donc patcher le <base href>.
       - name: Adjust base href for GitHub Pages
         env:

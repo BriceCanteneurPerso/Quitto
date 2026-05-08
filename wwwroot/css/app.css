@@ -1,12 +1,44 @@
-html, body {
-    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
-    background: #f5f7f6;
+/* Tokens visuels alignés sur QuittoTheme.cs (Lib/QuittoTheme.cs).
+   Toute modif de couleur doit se refléter dans les deux endroits. */
+:root {
+    --quitto-primary: #1f6f54;
+    --quitto-primary-soft: #e8f3ee;
+    --quitto-primary-soft-2: #d5e8df;
+    --quitto-secondary: #c8901c;
+    --quitto-bg: #f6faf8;
+    --quitto-surface: #ffffff;
+    --quitto-text: #1a2f25;
+    --quitto-text-dim: #5a6b62;
+    --quitto-divider: #e5efea;
+    --quitto-pos: #1f6f54;
+    --quitto-neg: #c2333d;
+    --quitto-shadow-sm: 0 1px 2px rgba(15, 50, 35, 0.04), 0 1px 3px rgba(15, 50, 35, 0.06);
+    --quitto-shadow-md: 0 2px 4px rgba(15, 50, 35, 0.05), 0 4px 12px rgba(15, 50, 35, 0.07);
+}
+body.mud-dark-mode {
+    --quitto-primary: #4caf85;
+    --quitto-primary-soft: #163a2e;
+    --quitto-primary-soft-2: #1f4a3b;
+    --quitto-secondary: #f0c552;
+    --quitto-bg: #0c1612;
+    --quitto-surface: #16261e;
+    --quitto-text: #ffffff;
+    --quitto-text-dim: #a8bfb5;
+    --quitto-divider: #1d3127;
+    --quitto-pos: #4caf85;
+    --quitto-neg: #ef6b6b;
+    --quitto-shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.3), 0 1px 3px rgba(0, 0, 0, 0.2);
+    --quitto-shadow-md: 0 2px 4px rgba(0, 0, 0, 0.3), 0 4px 12px rgba(0, 0, 0, 0.25);
 }
 
-/* MudBlazor pose body.mud-dark-mode quand le thème sombre est actif. */
-body.mud-dark-mode {
-    background: #0e1a14;
+html, body {
+    font-family: 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+    background: var(--quitto-bg);
+    color: var(--quitto-text);
 }
+
+/* Smooth des transitions de thème (toggle clair ↔ sombre). */
+* { transition: background-color .25s ease, color .25s ease, border-color .25s ease; }
 
 .page-container {
     max-width: 720px;
@@ -14,6 +46,8 @@ body.mud-dark-mode {
     padding: 16px;
     padding-bottom: 96px;
 }
+
+/* ---------- Loading splash (Blazor pre-init) ---------- */
 
 #blazor-error-ui {
     background: #b71c1c;
@@ -27,12 +61,7 @@ body.mud-dark-mode {
     width: 100%;
     z-index: 1000;
 }
-#blazor-error-ui .dismiss {
-    cursor: pointer;
-    position: absolute;
-    right: .75rem;
-    top: .5rem;
-}
+#blazor-error-ui .dismiss { cursor: pointer; position: absolute; right: .75rem; top: .5rem; }
 
 .loading-progress {
     position: relative;
@@ -49,7 +78,7 @@ body.mud-dark-mode {
     transform: rotate(-90deg);
 }
 .loading-progress circle:last-child {
-    stroke: #1f6f54;
+    stroke: var(--quitto-primary);
     stroke-dasharray: calc(3.141 * var(--blazor-load-percentage, 0%) * 0.8), 500%;
     transition: stroke-dasharray 0.05s ease-in-out;
 }
@@ -58,27 +87,193 @@ body.mud-dark-mode {
     text-align: center;
     font-weight: 600;
     inset: calc(20vh + 3.25rem) 0 auto 0;
+    color: var(--quitto-text-dim);
 }
 .loading-progress-text:after {
     content: var(--blazor-load-percentage-text, "Chargement");
 }
 
-/* Quitto-specific tweaks */
-.expense-row .mud-list-item-text-secondary { color: #666; font-size: 12px; }
-.balance-positive { color: #1f6f54; font-weight: 600; }
-.balance-negative { color: #b53d3d; font-weight: 600; }
-.balance-zero     { color: #888; }
-body.mud-dark-mode .balance-positive { color: #4caf85; }
-body.mud-dark-mode .balance-negative { color: #ef6b6b; }
-body.mud-dark-mode .balance-zero     { color: #aaa; }
+/* ---------- Quitto-specific ---------- */
 
+.balance-positive { color: var(--quitto-pos); font-weight: 700; }
+.balance-negative { color: var(--quitto-neg); font-weight: 700; }
+.balance-zero     { color: var(--quitto-text-dim); }
+
+/* Banner de partage en haut du tricount */
 .share-banner {
     display: flex; gap: 8px; align-items: center;
-    padding: 8px 12px; border-radius: 8px;
-    background: #e8f3ee; color: #1f6f54;
-    font-size: 13px; margin-bottom: 12px;
+    padding: 10px 14px; border-radius: 12px;
+    background: var(--quitto-primary-soft);
+    color: var(--quitto-primary);
+    font-size: 13px; margin-bottom: 16px;
+    border: 1px solid var(--quitto-primary-soft-2);
 }
-body.mud-dark-mode .share-banner {
-    background: #163a2e;
-    color: #9bd5b9;
+
+/* Hero card sur Home */
+.quitto-hero {
+    border-radius: 16px;
+    padding: 28px 24px 24px;
+    margin-bottom: 20px;
+    background: linear-gradient(135deg, #1f6f54 0%, #2a8a6a 60%, #348e7c 100%);
+    color: #ffffff;
+    box-shadow: var(--quitto-shadow-md);
+    position: relative;
+    overflow: hidden;
 }
+body.mud-dark-mode .quitto-hero {
+    background: linear-gradient(135deg, #15473a 0%, #1f6f54 100%);
+}
+.quitto-hero h1 {
+    font-size: 28px;
+    font-weight: 800;
+    margin: 0 0 4px 0;
+    letter-spacing: -0.02em;
+}
+.quitto-hero p {
+    font-size: 14px;
+    opacity: 0.92;
+    margin: 0;
+}
+.quitto-hero::before {
+    content: '';
+    position: absolute;
+    width: 200px; height: 200px;
+    right: -60px; top: -60px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.08);
+}
+
+/* Stat strip sur le header GroupPage */
+.quitto-stat-strip {
+    display: flex; gap: 12px; flex-wrap: wrap;
+    margin-top: 12px;
+}
+.quitto-stat {
+    flex: 1; min-width: 96px;
+    background: var(--quitto-primary-soft);
+    border-radius: 12px;
+    padding: 10px 14px;
+    text-align: center;
+}
+.quitto-stat .v {
+    font-size: 22px; font-weight: 800;
+    color: var(--quitto-primary);
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+}
+.quitto-stat .l {
+    font-size: 11px;
+    color: var(--quitto-text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-top: 2px;
+}
+
+/* Avatars stack (membres) */
+.quitto-avatar-stack {
+    display: flex;
+}
+.quitto-avatar-stack > * {
+    margin-left: -8px;
+    border: 2px solid var(--quitto-surface);
+    box-shadow: 0 0 0 0.5px rgba(0,0,0,0.04);
+}
+.quitto-avatar-stack > *:first-child {
+    margin-left: 0;
+}
+
+/* Rangée de dépense */
+.quitto-expense-row {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px 12px;
+    border-radius: 12px;
+    transition: background-color .15s ease;
+}
+.quitto-expense-row:hover {
+    background: var(--quitto-primary-soft);
+}
+.quitto-expense-row .desc { font-weight: 600; font-size: 15px; color: var(--quitto-text); }
+.quitto-expense-row .meta { font-size: 12px; color: var(--quitto-text-dim); margin-top: 2px; }
+.quitto-expense-row .amount {
+    font-weight: 700; font-size: 16px;
+    color: var(--quitto-text);
+    font-variant-numeric: tabular-nums;
+}
+
+/* Chips catégorie sur les rows */
+.quitto-cat-chip {
+    display: inline-flex; align-items: center; gap: 4px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px; font-weight: 600;
+    line-height: 1.4;
+}
+
+/* Cartes de soldes (scoreboard) */
+.quitto-balance-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px;
+    border-radius: 14px;
+    background: var(--quitto-surface);
+    border: 1px solid var(--quitto-divider);
+    margin-bottom: 8px;
+    box-shadow: var(--quitto-shadow-sm);
+}
+.quitto-balance-card .who { flex: 1; min-width: 0; }
+.quitto-balance-card .who .name { font-weight: 600; font-size: 15px; color: var(--quitto-text); }
+.quitto-balance-card .who .sub { font-size: 12px; color: var(--quitto-text-dim); margin-top: 1px; }
+.quitto-balance-card .net {
+    font-weight: 800; font-size: 18px;
+    font-variant-numeric: tabular-nums;
+    letter-spacing: -0.01em;
+}
+
+/* ---------- Dark mode contrast overrides ----------
+   MudBlazor 9 par défaut désature trop les onglets inactifs en dark mode :
+   le texte tombe à ~40% d'opacité sur fond presque noir → illisible.
+   On rebooste à 75% inactif / accent vert actif. */
+
+body.mud-dark-mode .mud-tabs .mud-tab,
+body.mud-dark-mode .mud-tabs button.mud-tab {
+    color: rgba(255, 255, 255, 0.78);
+    opacity: 1;
+}
+body.mud-dark-mode .mud-tabs .mud-tab.mud-tab-active,
+body.mud-dark-mode .mud-tabs button.mud-tab.mud-tab-active {
+    color: var(--quitto-primary);
+}
+body.mud-dark-mode .mud-tabs .mud-tabs-toolbar-content .mud-tab-icon-text-wrapper {
+    opacity: 1;
+}
+/* La barre indicatrice (slider) sous l'onglet actif. */
+body.mud-dark-mode .mud-tabs .mud-tab-slider {
+    background: var(--quitto-primary);
+}
+
+/* Ajustements meta sombre pour le hero, le stat strip, et les cards : on
+   profite des variables --quitto-* qui sont déjà patchées sur body.mud-dark-mode. */
+body.mud-dark-mode .quitto-stat .l { color: var(--quitto-text-dim); }
+body.mud-dark-mode .quitto-balance-card,
+body.mud-dark-mode .quitto-recent-card {
+    background: var(--quitto-surface);
+    border-color: var(--quitto-divider);
+}
+
+/* Recents cards sur Home */
+.quitto-recent-card {
+    display: flex; align-items: center; gap: 12px;
+    padding: 14px;
+    border-radius: 14px;
+    background: var(--quitto-surface);
+    border: 1px solid var(--quitto-divider);
+    margin-bottom: 10px;
+    cursor: pointer;
+    transition: transform .12s ease, box-shadow .15s ease, border-color .15s ease;
+}
+.quitto-recent-card:hover {
+    transform: translateY(-1px);
+    box-shadow: var(--quitto-shadow-md);
+    border-color: var(--quitto-primary-soft-2);
+}
+.quitto-recent-card .name { font-weight: 600; font-size: 16px; }
+.quitto-recent-card .meta { font-size: 12px; color: var(--quitto-text-dim); margin-top: 2px; }

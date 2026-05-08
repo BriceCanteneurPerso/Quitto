@@ -6,7 +6,7 @@
 @implements IDisposable
 @inject ThemeService Theme
 
-<MudThemeProvider IsDarkMode="@Theme.IsDarkMode" />
+<MudThemeProvider Theme="@QuittoTheme.Default" IsDarkMode="@Theme.IsDarkMode" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />

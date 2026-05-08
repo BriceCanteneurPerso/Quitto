@@ -6,6 +6,7 @@
 @inject RecentGroupsService Recent
 @inject BalanceService Balance
 @inject BackupService Backup
+@inject OnboardingService Onboarding
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
@@ -45,6 +46,20 @@ else if (_group is null)
 }
 else
 {
+    @if (_showOnboarding)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Filled"
+                  ShowCloseIcon="true" CloseIconClicked="DismissOnboarding"
+                  Class="mb-3">
+            <MudText Typo="Typo.subtitle2" Style="margin-bottom: 4px;">Bienvenue sur Quitto 👋</MudText>
+            <ul style="margin: 0; padding-left: 18px; font-size: 13px;">
+                <li>Tape sur le <strong>+</strong> en bas à droite pour ajouter une dépense.</li>
+                <li>L'onglet <strong>Soldes</strong> te dit qui doit combien à qui.</li>
+                <li>Bouton <strong>Partager</strong> en haut → invite tes potes (lien, QR, ou partage natif).</li>
+            </ul>
+        </MudAlert>
+    }
+
     <div class="share-banner">
         <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" />
         <span style="flex: 1;">Partage ce lien à tes potes pour qu'ils rejoignent le tricount.</span>
@@ -53,10 +68,10 @@ else
     </div>
 
     <MudPaper Class="pa-4 mb-3" Elevation="0">
-        <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-            <div>
+        <MudStack Row="true" AlignItems="AlignItems.Start" Justify="Justify.SpaceBetween">
+            <div style="flex: 1; min-width: 0;">
                 <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
-                    <h1 style="font-size: 22px; margin: 0;">@_group.Name</h1>
+                    <h1 style="font-size: 26px; margin: 0; font-weight: 800; letter-spacing: -0.02em;">@_group.Name</h1>
                     @if (!string.IsNullOrEmpty(_group.SharePin))
                     {
                         <MudTooltip Text="Tricount verrouillé avec un PIN">
@@ -64,12 +79,25 @@ else
                         </MudTooltip>
                     }
                 </MudStack>
-                <MudText Typo="Typo.caption" Color="Color.Default">
-                    @_members.Count membres · @_expenses.Count dépenses
-                </MudText>
+                <div class="quitto-avatar-stack mt-2">
+                    @foreach (var m in _members.Take(8))
+                    {
+                        <MudAvatar Size="Size.Small"
+                                   Style="@($"background: {ColorOf(m)}; color: white; font-size: 11px; font-weight: 700;")">
+                            @InitialsOf(m.Name)
+                        </MudAvatar>
+                    }
+                    @if (_members.Count > 8)
+                    {
+                        <MudAvatar Size="Size.Small"
+                                   Style="background: var(--quitto-divider); color: var(--quitto-text-dim); font-size: 11px; font-weight: 700;">
+                            +@(_members.Count - 8)
+                        </MudAvatar>
+                    }
+                </div>
             </div>
             <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
-                <MudIconButton Icon="@Icons.Material.Filled.Share" OnClick="ShareLink" />
+                <MudIconButton Icon="@Icons.Material.Filled.Share" OnClick="ShareLink" Color="Color.Primary" />
                 <MudMenu Icon="@Icons.Material.Filled.MoreVert" AnchorOrigin="Origin.BottomRight">
                     @if (string.IsNullOrEmpty(_group.SharePin))
                     {
@@ -122,6 +150,23 @@ else
                            accept=".json" style="display:none" />
             </MudStack>
         </MudStack>
+
+        @* Stat strip : repères chiffres en avant pour donner immédiatement la
+           "température" du tricount. *@
+        <div class="quitto-stat-strip">
+            <div class="quitto-stat">
+                <div class="v">@FormatAmount(StatsTotal())</div>
+                <div class="l">Total</div>
+            </div>
+            <div class="quitto-stat">
+                <div class="v">@_expenses.Count</div>
+                <div class="l">@(_expenses.Count > 1 ? "Dépenses" : "Dépense")</div>
+            </div>
+            <div class="quitto-stat">
+                <div class="v">@_members.Count</div>
+                <div class="l">@(_members.Count > 1 ? "Membres" : "Membre")</div>
+            </div>
+        </div>
     </MudPaper>
 
     <MudTabs Outlined="false" Position="Position.Top" Rounded="false" KeepPanelsAlive="true">
@@ -178,39 +223,36 @@ else
             }
             else
             {
-                <MudList T="Expense" Dense="false">
-                    @foreach (var e in visibleExpenses)
-                    {
-                        var ee = e;
-                        var payer = _members.FirstOrDefault(m => m.Id == ee.PayerId);
-                        var pcount = _participantsByExpense.GetValueOrDefault(ee.Id)?.Count ?? 0;
-                        var cat = CategoryDetector.FromKey(ee.Category);
-                        <MudListItem T="Expense">
-                            <AvatarContent>
-                                <MudAvatar Style="@($"background: {cat.Color}; color: white;")">
-                                    <MudIcon Icon="@cat.Icon" Style="color: white;" />
-                                </MudAvatar>
-                            </AvatarContent>
-                            <ChildContent>
-                                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
-                                    <div style="flex: 1; min-width: 0;">
-                                        <MudText Typo="Typo.body1">@ee.Description</MudText>
-                                        <MudText Typo="Typo.caption" Color="Color.Default">
-                                            Payé par @(payer?.Name ?? "?") · @ee.PaidAt.ToString("dd MMM") · @pcount part@(pcount > 1 ? "s" : "")
-                                        </MudText>
-                                    </div>
-                                    <MudText Typo="Typo.body1" Style="font-weight: 600;">
-                                        @FormatAmount(ee.Amount)
-                                    </MudText>
-                                    <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                                   OnClick="@(() => Nav.NavigateTo($"g/{Id}/expense/{ee.Id}/edit"))" />
-                                    <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                                   OnClick="@(() => DeleteExpense(ee))" />
-                                </MudStack>
-                            </ChildContent>
-                        </MudListItem>
-                    }
-                </MudList>
+                @foreach (var e in visibleExpenses)
+                {
+                    var ee = e;
+                    var payer = _members.FirstOrDefault(m => m.Id == ee.PayerId);
+                    var pcount = _participantsByExpense.GetValueOrDefault(ee.Id)?.Count ?? 0;
+                    var cat = CategoryDetector.FromKey(ee.Category);
+                    <div class="quitto-expense-row">
+                        <MudAvatar Style="@($"background: {cat.Color}1a; color: {cat.Color};")"
+                                   Size="Size.Medium">
+                            <MudIcon Icon="@cat.Icon" Style="@($"color: {cat.Color};")" />
+                        </MudAvatar>
+                        <div style="flex: 1; min-width: 0;">
+                            <div class="desc">@ee.Description</div>
+                            <div class="meta">
+                                <span class="quitto-cat-chip"
+                                      style="@($"background: {cat.Color}1a; color: {cat.Color};")">
+                                    @cat.Label
+                                </span>
+                                <span style="margin-left: 6px;">
+                                    @(payer?.Name ?? "?") · @ee.PaidAt.ToString("dd MMM") · @pcount part@(pcount > 1 ? "s" : "")
+                                </span>
+                            </div>
+                        </div>
+                        <div class="amount">@FormatAmount(ee.Amount)</div>
+                        <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                       OnClick="@(() => Nav.NavigateTo($"g/{Id}/expense/{ee.Id}/edit"))" />
+                        <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
+                                       OnClick="@(() => DeleteExpense(ee))" />
+                    </div>
+                }
             }
             <MudFab Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add"
                     Style="position: fixed; bottom: 24px; right: 24px; z-index: 100;"
@@ -249,16 +291,24 @@ else
                 @foreach (var b in FilteredBalances().OrderByDescending(b => b.Net))
                 {
                     var member = _members.First(m => m.Id == b.MemberId);
-                    var cls = b.Net > 0.005m ? "balance-positive"
-                             : b.Net < -0.005m ? "balance-negative"
-                             : "balance-zero";
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="my-1">
-                        <MudAvatar Size="Size.Small" Style="@($"background: {ColorOf(member)}; color: white; font-size: 12px;")">
+                    var pos = b.Net > 0.005m;
+                    var neg = b.Net < -0.005m;
+                    var cls = pos ? "balance-positive" : neg ? "balance-negative" : "balance-zero";
+                    var subText = pos ? "On lui doit"
+                                : neg ? "Doit aux autres"
+                                : "À l'équilibre";
+                    <div class="quitto-balance-card"
+                         style="@($"border-left: 4px solid {ColorOf(member)};")">
+                        <MudAvatar Size="Size.Medium"
+                                   Style="@($"background: {ColorOf(member)}; color: white; font-weight: 700;")">
                             @InitialsOf(member.Name)
                         </MudAvatar>
-                        <span style="flex: 1;">@member.Name</span>
-                        <span class="@cls">@FormatSigned(b.Net)</span>
-                    </MudStack>
+                        <div class="who">
+                            <div class="name">@member.Name</div>
+                            <div class="sub">@subText</div>
+                        </div>
+                        <div class="net @cls">@FormatSigned(b.Net)</div>
+                    </div>
                 }
             </MudPaper>
 
@@ -347,23 +397,37 @@ else
 
                 <MudPaper Class="pa-3 mb-3" Elevation="0">
                     <MudText Typo="Typo.subtitle2" Class="mb-2">Par catégorie</MudText>
-                    @foreach (var c in StatsByCategory())
-                    {
-                        var pct = StatsTotal() > 0 ? (double)(c.Total / StatsTotal()) * 100 : 0;
-                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="my-2">
-                            <MudIcon Icon="@c.Category.Icon" Style="@($"color: {c.Category.Color};")" />
-                            <div style="flex: 1; min-width: 0;">
-                                <MudStack Row="true" Justify="Justify.SpaceBetween">
-                                    <span>@c.Category.Label</span>
-                                    <span style="font-weight: 600;">@FormatAmount(c.Total)</span>
-                                </MudStack>
-                                <div style="background: #eee; border-radius: 3px; height: 6px; margin-top: 4px;">
-                                    <div style="@($"background: {c.Category.Color}; width: {pct.ToString("F1", CultureInfo.InvariantCulture)}%; height: 6px; border-radius: 3px;")"></div>
-                                </div>
-                                <MudText Typo="Typo.caption" Color="Color.Default">@($"{pct:F1} %")</MudText>
-                            </div>
-                        </MudStack>
+                    @{
+                        var byCat = StatsByCategory();
+                        var total = StatsTotal();
+                        var donutData    = byCat.Select(c => (double)c.Total).ToArray();
+                        var donutLabels  = byCat.Select(c => c.Category.Label).ToArray();
+                        var donutColors  = byCat.Select(c => c.Category.Color).ToArray();
+                        var donutOptions = new ChartOptions { ChartPalette = donutColors };
                     }
+                    <div style="display: flex; gap: 24px; align-items: center; flex-wrap: wrap;">
+                        @* MudChart est générique sur le type des valeurs (double). On
+                           ne fournit PAS InputLabels : on rend notre propre légende
+                           colorée à droite, plus compacte que celle native. *@
+                        <MudChart T="double"
+                                  ChartType="ChartType.Donut"
+                                  InputData="@donutData"
+                                  ChartOptions="@donutOptions"
+                                  Width="200px" Height="200px" />
+                        <div style="flex: 1; min-width: 220px;">
+                            @foreach (var c in byCat)
+                            {
+                                var pct = total > 0 ? (double)(c.Total / total) * 100 : 0;
+                                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="my-1">
+                                    <div style="@($"width: 12px; height: 12px; border-radius: 2px; background: {c.Category.Color};")"></div>
+                                    <MudIcon Icon="@c.Category.Icon" Size="Size.Small" Style="@($"color: {c.Category.Color};")" />
+                                    <span style="flex: 1;">@c.Category.Label</span>
+                                    <span style="font-weight: 600;">@FormatAmount(c.Total)</span>
+                                    <span style="color: #888; font-size: 12px; min-width: 42px; text-align: right;">@($"{pct:F0} %")</span>
+                                </MudStack>
+                            }
+                        </div>
+                    </div>
                 </MudPaper>
 
                 <MudPaper Class="pa-3 mb-3" Elevation="0">
@@ -468,6 +532,14 @@ else
             }
             else
             {
+                <MudStack Row="true" Justify="Justify.FlexEnd" Class="mb-2">
+                    <MudButton StartIcon="@Icons.Material.Filled.DeleteSweep"
+                               Color="Color.Error" Size="Size.Small" Variant="Variant.Outlined"
+                               OnClick="EmptyTrash">
+                        Vider la corbeille
+                    </MudButton>
+                </MudStack>
+
                 @if (_deletedExpenses.Count > 0)
                 {
                     <MudPaper Class="pa-3 mb-3" Elevation="0">
@@ -555,6 +627,7 @@ else
     private List<Transfer> _deletedTransfers = new();
     private Dictionary<Guid, List<Guid>> _participantsByExpense = new();
     private bool _loading = true;
+    private bool _showOnboarding;
     private string _newMemberName = "";
 
     // Filtres Dépenses
@@ -584,7 +657,14 @@ else
             pin = known?.Pin;
         }
         Session.Set(Id, pin);
+        _showOnboarding = !await Onboarding.HasSeenAsync();
         await Reload();
+    }
+
+    private async Task DismissOnboarding()
+    {
+        _showOnboarding = false;
+        await Onboarding.MarkSeenAsync();
     }
 
     private async Task Reload()
@@ -1011,6 +1091,28 @@ else
             Session.Set(Id, _group?.SharePin);
             await Sb.HardDeleteTransferAsync(t.Id);
             await Reload();
+        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
+    }
+
+    private async Task EmptyTrash()
+    {
+        var total = _deletedExpenses.Count + _deletedTransfers.Count;
+        if (total == 0) return;
+        var ok = await ConfirmDialog.AskAsync(DialogService,
+            title: "Vider la corbeille ?",
+            message: $"Va supprimer définitivement {total} élément(s). Aucun retour possible.",
+            confirmLabel: "Vider", color: Color.Error);
+        if (!ok) return;
+        try
+        {
+            Session.Set(Id, _group?.SharePin);
+            // On purge dans cet ordre pour respecter les FK :
+            // les expense_participants sont retirés implicitement par HardDeleteExpenseAsync.
+            foreach (var e in _deletedExpenses.ToList()) await Sb.HardDeleteExpenseAsync(e.Id);
+            foreach (var t in _deletedTransfers.ToList()) await Sb.HardDeleteTransferAsync(t.Id);
+            await Reload();
+            Snackbar.Add($"Corbeille vidée ({total} élément(s)).", Severity.Success);
         }
         catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
     }

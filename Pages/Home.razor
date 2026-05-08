@@ -14,23 +14,24 @@
     </MudAlert>
 }
 
-<MudPaper Class="pa-4 mb-3" Elevation="0">
-    <h1 style="font-size: 24px; margin: 0 0 4px 0;">Mes tricounts</h1>
-    <MudText Typo="Typo.body2" Color="Color.Default">Partage les frais avec tes potes, sans compte.</MudText>
-</MudPaper>
-
-<MudStack Row="true" Spacing="2" Class="mb-4">
-    <MudButton Variant="Variant.Filled" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Add"
-               OnClick="@(() => Nav.NavigateTo("new"))">
-        Nouveau
-    </MudButton>
-    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
-               StartIcon="@Icons.Material.Filled.Link"
-               OnClick="OpenJoinDialog">
-        Rejoindre via lien
-    </MudButton>
-</MudStack>
+<div class="quitto-hero">
+    <h1>Mes tricounts</h1>
+    <p>Répartis les frais entre amis, sans compte.</p>
+    <MudStack Row="true" Spacing="2" Class="mt-4">
+        <MudButton Variant="Variant.Filled"
+                   StartIcon="@Icons.Material.Filled.Add"
+                   OnClick="@(() => Nav.NavigateTo("new"))"
+                   Style="background: rgba(255,255,255,0.95); color: #1f6f54; font-weight: 700;">
+            Nouveau
+        </MudButton>
+        <MudButton Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.Link"
+                   OnClick="OpenJoinDialog"
+                   Style="border-color: rgba(255,255,255,0.7); color: white; font-weight: 600;">
+            Rejoindre via lien
+        </MudButton>
+    </MudStack>
+</div>
 
 @if (_loading)
 {
@@ -59,36 +60,34 @@ else if (_recent.Count == 0)
 }
 else
 {
-    <MudList T="RecentGroup" Dense="false">
-        @foreach (var r in _recent)
-        {
-            var rr = r;
-            <MudListItem T="RecentGroup" OnClick="@(() => Nav.NavigateTo($"g/{rr.Id}"))">
-                <AvatarContent>
-                    <MudAvatar Color="Color.Primary">@(InitialsOf(rr.Name))</MudAvatar>
-                </AvatarContent>
-                <ChildContent>
-                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
-                        <div style="flex: 1; min-width: 0;">
-                            <MudText Typo="Typo.body1">@rr.Name</MudText>
-                            <MudText Typo="Typo.caption" Color="Color.Default">
-                                Vu @FormatRelative(rr.LastVisit)
-                            </MudText>
-                        </div>
-                        @* Wrapper indispensable : @onclick:stopPropagation neutralise
-                           le click bubbling vers MudListItem.OnClick (qui naviguerait sur
-                           le tricount). Le @onclick="@(() => {})" no-op est requis pour
-                           que Blazor enregistre l'event et applique stopPropagation. *@
-                        <div @onclick="@(() => {})" @onclick:stopPropagation="true" style="display: inline-flex;">
-                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
-                                           OnClick="@(() => ForgetAsync(rr))"
-                                           title="Oublier sur cet appareil" />
-                        </div>
-                    </MudStack>
-                </ChildContent>
-            </MudListItem>
-        }
-    </MudList>
+    @foreach (var r in _recent)
+    {
+        var rr = r;
+        <div class="quitto-recent-card" @onclick="@(() => Nav.NavigateTo($"g/{rr.Id}"))">
+            <MudAvatar Style="@($"background: {AvatarColorFor(rr.Name)}; color: white; font-weight: 700;")"
+                       Size="Size.Medium">
+                @InitialsOf(rr.Name)
+            </MudAvatar>
+            <div style="flex: 1; min-width: 0;">
+                <div class="name">@rr.Name</div>
+                <div class="meta">
+                    @if (!string.IsNullOrEmpty(rr.Pin))
+                    {
+                        <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small"
+                                 Style="font-size: 12px; vertical-align: -2px; margin-right: 2px;" />
+                    }
+                    Vu @FormatRelative(rr.LastVisit)
+                </div>
+            </div>
+            @* Stop propagation : on ne veut pas que le click sur "oublier"
+               navigue aussi vers le tricount. *@
+            <div @onclick="@(() => {})" @onclick:stopPropagation="true" style="display: inline-flex;">
+                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                               OnClick="@(() => ForgetAsync(rr))"
+                               title="Oublier sur cet appareil" />
+            </div>
+        </div>
+    }
 }
 
 @code {
@@ -99,6 +98,18 @@ else
     {
         _recent = await Recent.GetAllAsync();
         _loading = false;
+    }
+
+    /// <summary>
+    /// Couleur déterministe à partir du nom du groupe — même tricount = même
+    /// couleur d'avatar à chaque visite. Hash simple sur la palette membre.
+    /// </summary>
+    private static string AvatarColorFor(string name)
+    {
+        var sum = 0;
+        foreach (var c in name ?? "")
+            sum = (sum + c) % MemberPalette.Colors.Length;
+        return MemberPalette.Pick(sum);
     }
 
     private static string InitialsOf(string name)

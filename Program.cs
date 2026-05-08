@@ -40,5 +40,6 @@ builder.Services.AddScoped<RecentGroupsService>();   // localStorage : liste des
 builder.Services.AddScoped<BalanceService>();        // Calcul des soldes + remboursements simplifiés.
 builder.Services.AddScoped<BackupService>();         // Snapshot JSON + clonage non-destructif.
 builder.Services.AddScoped<ThemeService>();          // Light/dark/auto, persisté en localStorage.
+builder.Services.AddScoped<OnboardingService>();     // Drapeau "vu l'onboarding" en localStorage.
 
 await builder.Build().RunAsync();

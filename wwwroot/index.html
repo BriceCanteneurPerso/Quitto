@@ -20,12 +20,17 @@
     <meta property="og:type" content="website" />
     <meta property="og:title" content="Quitto" />
     <meta property="og:description" content="Répartis les frais entre amis, sans compte." />
-    <meta property="og:image" content="icon.svg" />
+    <!-- og-image.png est généré au CI depuis og-image.svg (PNG requis par
+         Twitter/X et la plupart des unfurls). twitter:card "summary_large_image"
+         active la grande preview horizontale. -->
+    <meta property="og:image" content="og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
     <meta property="og:locale" content="fr_FR" />
-    <meta name="twitter:card" content="summary" />
+    <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:title" content="Quitto" />
     <meta name="twitter:description" content="Répartis les frais entre amis, sans compte." />
-    <meta name="twitter:image" content="icon.svg" />
+    <meta name="twitter:image" content="og-image.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -33,7 +38,9 @@
     <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
     <link rel="stylesheet" href="css/app.css" />
     <link rel="icon" href="icon.svg" type="image/svg+xml" />
-    <link rel="apple-touch-icon" href="icon.svg" />
+    <!-- iOS Safari ignore les icônes SVG dans manifest et apple-touch.
+         icon-180.png est généré au CI depuis icon.svg. -->
+    <link rel="apple-touch-icon" href="icon-180.png" />
     <link href="Quitto.styles.css" rel="stylesheet" />
     <link href="manifest.webmanifest" rel="manifest" />
 </head>
