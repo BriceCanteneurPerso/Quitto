@@ -1,0 +1,110 @@
+@page "/"
+@inject NavigationManager Nav
+@inject RecentGroupsService Recent
+@inject SupabaseClient Sb
+@inject ISnackbar Snackbar
+
+<PageTitle>Quitto</PageTitle>
+
+@if (!Sb.IsConfigured)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-4">
+        Supabase n'est pas configuré. Édite <code>wwwroot/appsettings.json</code> et redémarre l'app.
+    </MudAlert>
+}
+
+<MudPaper Class="pa-4 mb-3" Elevation="0">
+    <h1 style="font-size: 24px; margin: 0 0 4px 0;">Mes tricounts</h1>
+    <MudText Typo="Typo.body2" Color="Color.Default">Partage les frais avec tes potes, sans compte.</MudText>
+</MudPaper>
+
+<MudStack Row="true" Spacing="2" Class="mb-4">
+    <MudButton Variant="Variant.Filled" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Add"
+               OnClick="@(() => Nav.NavigateTo("new"))">
+        Nouveau
+    </MudButton>
+    <MudButton Variant="Variant.Outlined" Color="Color.Primary"
+               StartIcon="@Icons.Material.Filled.Link"
+               OnClick="OpenJoinDialog">
+        Rejoindre via lien
+    </MudButton>
+</MudStack>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" />
+}
+else if (_recent.Count == 0)
+{
+    <MudPaper Class="pa-6 text-center" Elevation="0" Style="background: #fafafa;">
+        <MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Large" Color="Color.Default" />
+        <MudText Class="mt-2" Typo="Typo.body2">Aucun tricount pour l'instant.</MudText>
+    </MudPaper>
+}
+else
+{
+    <MudList T="RecentGroup" Dense="false">
+        @foreach (var r in _recent)
+        {
+            <MudListItem T="RecentGroup" OnClick="@(() => Nav.NavigateTo($"g/{r.Id}"))">
+                <AvatarContent>
+                    <MudAvatar Color="Color.Primary">@(InitialsOf(r.Name))</MudAvatar>
+                </AvatarContent>
+                <ChildContent>
+                    <MudText Typo="Typo.body1">@r.Name</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Default">
+                        Vu @FormatRelative(r.LastVisit)
+                    </MudText>
+                </ChildContent>
+            </MudListItem>
+        }
+    </MudList>
+}
+
+@code {
+    private List<RecentGroup> _recent = new();
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _recent = await Recent.GetAllAsync();
+        _loading = false;
+    }
+
+    private static string InitialsOf(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name)) return "?";
+        var parts = name.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+        if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
+        return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
+    }
+
+    private static string FormatRelative(DateTime utc)
+    {
+        var d = DateTime.UtcNow - utc;
+        if (d.TotalMinutes < 1) return "à l'instant";
+        if (d.TotalHours < 1)   return $"il y a {(int)d.TotalMinutes} min";
+        if (d.TotalDays < 1)    return $"il y a {(int)d.TotalHours} h";
+        if (d.TotalDays < 30)   return $"il y a {(int)d.TotalDays} j";
+        return utc.ToLocalTime().ToString("dd MMM yyyy");
+    }
+
+    private async Task OpenJoinDialog()
+    {
+        // On utilise le prompt natif pour rester ultra-léger en v1.
+        var url = await JsRuntime.InvokeAsync<string?>("prompt", "Colle le lien du tricount :");
+        if (string.IsNullOrWhiteSpace(url)) return;
+        var seg = url.Trim().Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+        if (Guid.TryParse(seg, out var id))
+        {
+            Nav.NavigateTo($"g/{id}");
+        }
+        else
+        {
+            Snackbar.Add("Lien invalide.", Severity.Warning);
+        }
+    }
+
+    [Inject] private IJSRuntime JsRuntime { get; set; } = default!;
+}

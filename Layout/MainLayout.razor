@@ -1,0 +1,19 @@
+@inherits LayoutComponentBase
+
+<MudLayout>
+    <MudAppBar Elevation="1" Color="Color.Primary" Dense="true">
+        <MudIcon Icon="@Icons.Material.Filled.AccountBalanceWallet" Class="mr-2" />
+        <MudText Typo="Typo.h6">
+            <MudLink Href="" Color="Color.Inherit" Underline="Underline.None">Quitto</MudLink>
+        </MudText>
+    </MudAppBar>
+    <MudMainContent>
+        @* Pas de Class="pt-2" ici : MudMainContent met automatiquement padding-top:64px
+           pour libérer la place sous le MudAppBar fixe, et nos utility classes MudBlazor
+           passent en !important — elles écraseraient ce padding et le contenu se mettrait
+           sous la barre. *@
+        <div class="page-container">
+            @Body
+        </div>
+    </MudMainContent>
+</MudLayout>

@@ -1,0 +1,10 @@
+bin/
+obj/
+*.user
+.vs/
+.idea/
+.vscode/
+.claude/
+*.swp
+release/
+publish/

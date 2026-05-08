@@ -1,0 +1,105 @@
+@page "/g/{Id:guid}/transfer/new"
+@inject SupabaseClient Sb
+@inject GroupSession Session
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Quitto — Nouveau remboursement</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Class="mt-4" />
+}
+else if (_members.Count < 2)
+{
+    <MudAlert Severity="Severity.Warning">Il faut au moins 2 membres pour un remboursement.</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4" Elevation="0">
+        <h1 style="font-size: 22px; margin: 0 0 12px 0;">Enregistrer un remboursement</h1>
+
+        <MudSelect @bind-Value="_fromId" T="Guid" Label="De" Variant="Variant.Outlined" Class="mb-3">
+            @foreach (var m in _members)
+            {
+                <MudSelectItem T="Guid" Value="m.Id">@m.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudSelect @bind-Value="_toId" T="Guid" Label="Vers" Variant="Variant.Outlined" Class="mb-3">
+            @foreach (var m in _members.Where(m => m.Id != _fromId))
+            {
+                <MudSelectItem T="Guid" Value="m.Id">@m.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudNumericField @bind-Value="_amount" Label="Montant" Variant="Variant.Outlined"
+                         Format="F2" Min="0.01m" Step="0.01m" Class="mb-3" />
+
+        <MudDatePicker @bind-Date="_paidAt" Label="Date" Variant="Variant.Outlined"
+                       DateFormat="dd/MM/yyyy" Class="mb-3" />
+
+        <MudStack Row="true" Spacing="2" Justify="Justify.FlexEnd">
+            <MudButton OnClick="@(() => Nav.NavigateTo($"g/{Id}"))">Annuler</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="Save" Disabled="@_busy">
+                @(_busy ? "Enregistrement…" : "Ajouter")
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+
+    private List<Member> _members = new();
+    private Guid _fromId;
+    private Guid _toId;
+    private decimal _amount;
+    private DateTime? _paidAt = DateTime.Today;
+    private bool _busy;
+    private bool _loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Set(Id);
+        try
+        {
+            _members = await Sb.GetMembersAsync();
+            if (_members.Count >= 1) _fromId = _members[0].Id;
+            if (_members.Count >= 2) _toId   = _members[1].Id;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec du chargement : {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task Save()
+    {
+        if (_fromId == _toId)        { Snackbar.Add("De et Vers doivent être différents.", Severity.Warning); return; }
+        if (_amount <= 0)            { Snackbar.Add("Montant invalide.", Severity.Warning); return; }
+
+        _busy = true;
+        try
+        {
+            Session.Set(Id); // belt-and-suspenders : garantit que le header x-group-id est bien posé.
+            var paid = DateOnly.FromDateTime(_paidAt ?? DateTime.Today);
+            await Sb.AddTransferAsync(Id, _fromId, _toId, _amount, paid);
+            Nav.NavigateTo($"g/{Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+}
