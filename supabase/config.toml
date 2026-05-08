@@ -1,0 +1,5 @@
+# Minimal Supabase config — used by the Supabase GitHub integration to
+# auto-apply migrations from `supabase/migrations/` to the linked project.
+# Local dev (`supabase start`) is not required for Quitto in v1.
+
+project_id = "oefsnfbmkwlclxjxqbaa"

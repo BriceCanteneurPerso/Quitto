@@ -1,0 +1,21 @@
+@*
+    Composant racine : pose les providers globaux (theme/popover/dialog/snackbar)
+    puis monte le router.
+*@
+<MudThemeProvider IsDarkMode="false" />
+<MudPopoverProvider />
+<MudDialogProvider />
+<MudSnackbarProvider />
+
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <PageTitle>Quitto — 404</PageTitle>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <MudText Class="pa-4">Page introuvable.</MudText>
+        </LayoutView>
+    </NotFound>
+</Router>

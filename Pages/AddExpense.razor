@@ -1,0 +1,167 @@
+@page "/g/{Id:guid}/expense/new"
+@page "/g/{Id:guid}/expense/{ExpenseId:guid}/edit"
+@inject SupabaseClient Sb
+@inject GroupSession Session
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Quitto — @(IsEdit ? "Modifier la dépense" : "Nouvelle dépense")</PageTitle>
+
+@if (_loading)
+{
+    <MudProgressCircular Indeterminate="true" Class="mt-4" />
+}
+else if (_members.Count == 0)
+{
+    <MudAlert Severity="Severity.Warning">Aucun membre. Reviens à la liste pour en ajouter.</MudAlert>
+}
+else if (IsEdit && _missing)
+{
+    <MudAlert Severity="Severity.Error">Dépense introuvable.</MudAlert>
+}
+else
+{
+    <MudPaper Class="pa-4" Elevation="0">
+        <h1 style="font-size: 22px; margin: 0 0 12px 0;">
+            @(IsEdit ? "Modifier la dépense" : "Nouvelle dépense")
+        </h1>
+
+        <MudTextField @bind-Value="_description" Label="Description" Variant="Variant.Outlined"
+                      Placeholder="Resto" Class="mb-3" Immediate="true" />
+
+        <MudNumericField @bind-Value="_amount" Label="Montant" Variant="Variant.Outlined"
+                         Format="F2" Min="0.01m" Step="0.01m" Class="mb-3" />
+
+        <MudDatePicker @bind-Date="_paidAt" Label="Date" Variant="Variant.Outlined"
+                       DateFormat="dd/MM/yyyy" Class="mb-3" />
+
+        <MudSelect @bind-Value="_payerId" T="Guid" Label="Payé par" Variant="Variant.Outlined" Class="mb-3">
+            @foreach (var m in _members)
+            {
+                <MudSelectItem T="Guid" Value="m.Id">@m.Name</MudSelectItem>
+            }
+        </MudSelect>
+
+        <MudText Typo="Typo.subtitle2" Class="mb-1">Pour qui ?</MudText>
+        <MudPaper Class="pa-2 mb-3" Elevation="0" Style="background: #fafafa;">
+            <MudStack Row="true" Spacing="2" Class="mb-1">
+                <MudButton Size="Size.Small" OnClick="SelectAll">Tous</MudButton>
+                <MudButton Size="Size.Small" OnClick="SelectNone">Personne</MudButton>
+            </MudStack>
+            @foreach (var m in _members)
+            {
+                <MudCheckBox T="bool"
+                             Value="@_participants.Contains(m.Id)"
+                             ValueChanged="@((bool v) => ToggleParticipant(m.Id, v))"
+                             Label="@m.Name"
+                             Dense="true" />
+            }
+            @if (_participants.Count > 0 && _amount > 0)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Default" Class="mt-1">
+                    @($"{(_amount / _participants.Count):N2} par personne")
+                </MudText>
+            }
+        </MudPaper>
+
+        <MudStack Row="true" Spacing="2" Justify="Justify.FlexEnd">
+            <MudButton OnClick="@(() => Nav.NavigateTo($"g/{Id}"))">Annuler</MudButton>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="Save" Disabled="@_busy">
+                @(_busy ? "Enregistrement…" : (IsEdit ? "Enregistrer" : "Ajouter"))
+            </MudButton>
+        </MudStack>
+    </MudPaper>
+}
+
+@code {
+    [Parameter] public Guid Id { get; set; }
+    [Parameter] public Guid? ExpenseId { get; set; }
+
+    private bool IsEdit => ExpenseId is not null && ExpenseId != Guid.Empty;
+
+    private List<Member> _members = new();
+    private string _description = "";
+    private decimal _amount;
+    private DateTime? _paidAt = DateTime.Today;
+    private Guid _payerId;
+    private HashSet<Guid> _participants = new();
+    private bool _busy;
+    private bool _loading = true;
+    private bool _missing;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Session.Set(Id);
+        try
+        {
+            _members = await Sb.GetMembersAsync();
+
+            if (IsEdit)
+            {
+                var existing = await Sb.GetExpenseAsync(ExpenseId!.Value);
+                if (existing is null) { _missing = true; return; }
+                _description = existing.Description;
+                _amount      = existing.Amount;
+                _paidAt      = existing.PaidAt.ToDateTime(TimeOnly.MinValue);
+                _payerId     = existing.PayerId;
+                var parts = await Sb.GetExpenseParticipantsForAsync(existing.Id);
+                _participants = parts.Select(p => p.MemberId).ToHashSet();
+            }
+            else if (_members.Count > 0)
+            {
+                _payerId = _members[0].Id;
+                _participants = _members.Select(m => m.Id).ToHashSet();
+            }
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec du chargement : {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void ToggleParticipant(Guid memberId, bool include)
+    {
+        if (include) _participants.Add(memberId);
+        else _participants.Remove(memberId);
+    }
+
+    private void SelectAll() => _participants = _members.Select(m => m.Id).ToHashSet();
+    private void SelectNone() => _participants.Clear();
+
+    private async Task Save()
+    {
+        if (string.IsNullOrWhiteSpace(_description)) { Snackbar.Add("Description manquante.", Severity.Warning); return; }
+        if (_amount <= 0)                            { Snackbar.Add("Montant invalide.", Severity.Warning); return; }
+        if (_payerId == Guid.Empty)                  { Snackbar.Add("Choisis un payeur.", Severity.Warning); return; }
+        if (_participants.Count == 0)                { Snackbar.Add("Choisis au moins un participant.", Severity.Warning); return; }
+
+        _busy = true;
+        try
+        {
+            Session.Set(Id); // belt-and-suspenders : garantit que le header x-group-id est bien posé.
+            var paid = DateOnly.FromDateTime(_paidAt ?? DateTime.Today);
+            if (IsEdit)
+            {
+                await Sb.UpdateExpenseAsync(ExpenseId!.Value, _payerId, _amount, _description.Trim(), paid, _participants);
+            }
+            else
+            {
+                await Sb.AddExpenseAsync(Id, _payerId, _amount, _description.Trim(), paid, _participants);
+            }
+            Nav.NavigateTo($"g/{Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

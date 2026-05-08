@@ -1,0 +1,104 @@
+@page "/new"
+@inject SupabaseClient Sb
+@inject GroupSession Session
+@inject RecentGroupsService Recent
+@inject NavigationManager Nav
+@inject ISnackbar Snackbar
+
+<PageTitle>Quitto — Nouveau tricount</PageTitle>
+
+<MudPaper Class="pa-4" Elevation="0">
+    <h1 style="font-size: 22px; margin: 0 0 12px 0;">Nouveau tricount</h1>
+
+    <MudTextField @bind-Value="_name" Label="Nom du tricount" Variant="Variant.Outlined"
+                  Placeholder="Weekend Berlin" Class="mb-3" Immediate="true" />
+
+    <MudSelect @bind-Value="_currency" Label="Devise" Variant="Variant.Outlined" Class="mb-3">
+        <MudSelectItem Value="@("EUR")">€ Euro</MudSelectItem>
+        <MudSelectItem Value="@("USD")">$ Dollar</MudSelectItem>
+        <MudSelectItem Value="@("GBP")">£ Livre</MudSelectItem>
+        <MudSelectItem Value="@("CHF")">₣ Franc suisse</MudSelectItem>
+    </MudSelect>
+
+    <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">Membres de départ</MudText>
+    @for (int i = 0; i < _members.Count; i++)
+    {
+        var idx = i;
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-2">
+            <MudTextField Value="@_members[idx]" ValueChanged="@((string v) => _members[idx] = v)"
+                          T="string" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Placeholder="@($"Membre {idx + 1}")" Style="flex: 1;" />
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                           OnClick="@(() => RemoveMember(idx))" Disabled="@(_members.Count <= 1)" />
+        </MudStack>
+    }
+    <MudButton StartIcon="@Icons.Material.Filled.PersonAdd" OnClick="AddMemberRow" Class="mb-3">
+        Ajouter un membre
+    </MudButton>
+
+    <MudStack Row="true" Spacing="2" Justify="Justify.FlexEnd">
+        <MudButton OnClick="@(() => Nav.NavigateTo(""))">Annuler</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                   OnClick="Create" Disabled="@_busy">
+            @(_busy ? "Création…" : "Créer")
+        </MudButton>
+    </MudStack>
+</MudPaper>
+
+@code {
+    private string _name = "";
+    private string _currency = "EUR";
+    private List<string> _members = new() { "", "" };
+    private bool _busy;
+
+    private void AddMemberRow() => _members.Add("");
+    private void RemoveMember(int i) => _members.RemoveAt(i);
+
+    private async Task Create()
+    {
+        if (string.IsNullOrWhiteSpace(_name))
+        {
+            Snackbar.Add("Donne un nom au tricount.", Severity.Warning);
+            return;
+        }
+        var validMembers = _members.Where(m => !string.IsNullOrWhiteSpace(m)).Select(m => m.Trim()).ToList();
+        if (validMembers.Count < 2)
+        {
+            Snackbar.Add("Il faut au moins 2 membres.", Severity.Warning);
+            return;
+        }
+        if (!Sb.IsConfigured)
+        {
+            Snackbar.Add("Supabase n'est pas configuré.", Severity.Error);
+            return;
+        }
+
+        _busy = true;
+        try
+        {
+            // On pré-génère l'id côté client : c'est ce que le header x-group-id
+            // doit valoir AVANT le POST pour passer la policy RLS d'INSERT.
+            var id = Guid.NewGuid();
+            Session.Set(id);
+            var group = await Sb.CreateGroupAsync(id, _name.Trim(), _currency);
+
+            // On ajoute les membres en série (les API REST ne supportent pas
+            // l'INSERT batch sans ré-encoder ; volume négligeable ici).
+            foreach (var m in validMembers)
+            {
+                await Sb.AddMemberAsync(group.Id, m);
+            }
+
+            await Recent.RememberAsync(group.Id, group.Name);
+            Nav.NavigateTo($"g/{group.Id}");
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
