@@ -53,38 +53,34 @@ else
                         : $"Catégorie auto-détectée : {effective.Label}")
                     : $"Catégorie : {effective.Label} (manuel)")
             </MudText>
-            @* MudMenu avec activator custom : on NE met PAS Icon/Size/Variant sur le
-               MudMenu lui-même (sinon conflit avec ActivatorContent et le clic n'ouvre
-               plus le menu). On laisse l'ActivatorContent porter tout le styling. *@
-            <MudMenu ActivationEvent="@MouseEvent.LeftClick" AnchorOrigin="Origin.BottomLeft">
-                <ActivatorContent>
-                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
-                               EndIcon="@Icons.Material.Filled.ArrowDropDown">
-                        Changer
-                    </MudButton>
-                </ActivatorContent>
-                <ChildContent>
-                    @foreach (var c in CategoryDetector.All)
-                    {
-                        var cc = c;
-                        <MudMenuItem OnClick="@(() => _categoryKey = cc.Key)">
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                <MudIcon Icon="@cc.Icon" Style="@($"color: {cc.Color};")" />
-                                <span>@cc.Label</span>
-                            </MudStack>
-                        </MudMenuItem>
-                    }
-                    @if (!isAutoMode)
-                    {
-                        <MudDivider />
-                        <MudMenuItem OnClick="@(() => _categoryKey = null)">
-                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
-                                <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" />
-                                <span>Auto (depuis la description)</span>
-                            </MudStack>
-                        </MudMenuItem>
-                    }
-                </ChildContent>
+            @* MudMenu avec son activator built-in (Label+EndIcon) — plus simple et plus
+               fiable que <ActivatorContent>+MudButton qui pose des soucis de propagation
+               de clic en MudBlazor 9.4. *@
+            <MudMenu Label="Changer"
+                     Variant="Variant.Outlined"
+                     Size="Size.Small"
+                     EndIcon="@Icons.Material.Filled.ArrowDropDown"
+                     AnchorOrigin="Origin.BottomLeft">
+                @foreach (var c in CategoryDetector.All)
+                {
+                    var cc = c;
+                    <MudMenuItem OnClick="@(() => _categoryKey = cc.Key)">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@cc.Icon" Style="@($"color: {cc.Color};")" />
+                            <span>@cc.Label</span>
+                        </MudStack>
+                    </MudMenuItem>
+                }
+                @if (!isAutoMode)
+                {
+                    <MudDivider />
+                    <MudMenuItem OnClick="@(() => _categoryKey = null)">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" />
+                            <span>Auto (depuis la description)</span>
+                        </MudStack>
+                    </MudMenuItem>
+                }
             </MudMenu>
         </MudStack>
 
