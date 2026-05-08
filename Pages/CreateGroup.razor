@@ -84,9 +84,11 @@
 
             // On ajoute les membres en série (les API REST ne supportent pas
             // l'INSERT batch sans ré-encoder ; volume négligeable ici).
-            foreach (var m in validMembers)
+            // Couleur assignée par index dans la palette pour que les avatars soient
+            // visuellement distincts dès la création.
+            for (int i = 0; i < validMembers.Count; i++)
             {
-                await Sb.AddMemberAsync(group.Id, m);
+                await Sb.AddMemberAsync(group.Id, validMembers[i], MemberPalette.Pick(i));
             }
 
             await Recent.RememberAsync(group.Id, group.Name);

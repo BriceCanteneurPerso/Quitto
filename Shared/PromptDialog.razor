@@ -1,0 +1,69 @@
+@*
+    Boîte de saisie texte (équivalent du `prompt()` natif).
+    Utilisé pour : renommer un membre, coller un lien de tricount, etc.
+*@
+
+<MudDialog>
+    <DialogContent>
+        @if (!string.IsNullOrEmpty(Message))
+        {
+            <MudText Typo="Typo.body1" Class="mb-2">@Message</MudText>
+        }
+        <MudTextField @bind-Value="_value" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Placeholder="@Placeholder" Immediate="true"
+                      OnKeyDown="OnKey" AutoFocus="true" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">@CancelLabel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="Confirm"
+                   Disabled="@(string.IsNullOrWhiteSpace(_value))">
+            @ConfirmLabel
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string Placeholder { get; set; } = "";
+    [Parameter] public string InitialValue { get; set; } = "";
+    [Parameter] public string ConfirmLabel { get; set; } = "OK";
+    [Parameter] public string CancelLabel { get; set; } = "Annuler";
+
+    private string _value = "";
+
+    protected override void OnInitialized() => _value = InitialValue;
+
+    private void Confirm()
+    {
+        if (string.IsNullOrWhiteSpace(_value)) return;
+        Dialog.Close(DialogResult.Ok(_value.Trim()));
+    }
+    private void Cancel() => Dialog.Cancel();
+
+    private void OnKey(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") Confirm();
+        else if (e.Key == "Escape") Cancel();
+    }
+
+    /// <summary>Helper d'ouverture. Renvoie la valeur saisie, ou null si annulé.</summary>
+    public static async Task<string?> AskAsync(IDialogService svc, string title,
+        string message = "", string placeholder = "", string initialValue = "",
+        string confirmLabel = "OK", string cancelLabel = "Annuler")
+    {
+        var parameters = new DialogParameters
+        {
+            ["Message"] = message,
+            ["Placeholder"] = placeholder,
+            ["InitialValue"] = initialValue,
+            ["ConfirmLabel"] = confirmLabel,
+            ["CancelLabel"] = cancelLabel
+        };
+        var dialog = await svc.ShowAsync<PromptDialog>(title, parameters);
+        var result = await dialog.Result;
+        if (result is null || result.Canceled) return null;
+        return result.Data as string;
+    }
+}

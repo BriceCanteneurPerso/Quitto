@@ -30,6 +30,7 @@ public class Expense
     [JsonPropertyName("amount")]      public decimal Amount { get; set; }
     [JsonPropertyName("description")] public string Description { get; set; } = "";
     [JsonPropertyName("category")]    public string? Category { get; set; }
+    [JsonPropertyName("notes")]       public string? Notes { get; set; }
     [JsonPropertyName("paid_at")]     public DateOnly PaidAt { get; set; }
     [JsonPropertyName("created_at")]  public DateTime CreatedAt { get; set; }
 }

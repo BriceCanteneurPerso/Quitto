@@ -1,10 +1,11 @@
 @page "/g/{Id:guid}/transfer/new"
+@page "/g/{Id:guid}/transfer/{TransferId:guid}/edit"
 @inject SupabaseClient Sb
 @inject GroupSession Session
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 
-<PageTitle>Quitto — Nouveau remboursement</PageTitle>
+<PageTitle>Quitto — @(IsEdit ? "Modifier le remboursement" : "Nouveau remboursement")</PageTitle>
 
 @if (_loading)
 {
@@ -14,10 +15,16 @@ else if (_members.Count < 2)
 {
     <MudAlert Severity="Severity.Warning">Il faut au moins 2 membres pour un remboursement.</MudAlert>
 }
+else if (IsEdit && _missing)
+{
+    <MudAlert Severity="Severity.Error">Remboursement introuvable.</MudAlert>
+}
 else
 {
     <MudPaper Class="pa-4" Elevation="0">
-        <h1 style="font-size: 22px; margin: 0 0 12px 0;">Enregistrer un remboursement</h1>
+        <h1 style="font-size: 22px; margin: 0 0 12px 0;">
+            @(IsEdit ? "Modifier le remboursement" : "Enregistrer un remboursement")
+        </h1>
 
         <MudSelect @bind-Value="_fromId" T="Guid" Label="De" Variant="Variant.Outlined" Class="mb-3">
             @foreach (var m in _members)
@@ -43,7 +50,7 @@ else
             <MudButton OnClick="@(() => Nav.NavigateTo($"g/{Id}"))">Annuler</MudButton>
             <MudButton Variant="Variant.Filled" Color="Color.Primary"
                        OnClick="Save" Disabled="@_busy">
-                @(_busy ? "Enregistrement…" : "Ajouter")
+                @(_busy ? "Enregistrement…" : (IsEdit ? "Enregistrer" : "Ajouter"))
             </MudButton>
         </MudStack>
     </MudPaper>
@@ -51,6 +58,15 @@ else
 
 @code {
     [Parameter] public Guid Id { get; set; }
+    [Parameter] public Guid? TransferId { get; set; }
+
+    // Settle-up shortcut : un clic sur un remboursement suggéré dans GroupPage
+    // navigue vers cette page avec ?from=...&to=...&amount=... pour pré-remplir.
+    [SupplyParameterFromQuery(Name = "from")]   public Guid? FromQuery   { get; set; }
+    [SupplyParameterFromQuery(Name = "to")]     public Guid? ToQuery     { get; set; }
+    [SupplyParameterFromQuery(Name = "amount")] public decimal? AmountQuery { get; set; }
+
+    private bool IsEdit => TransferId is not null && TransferId != Guid.Empty;
 
     private List<Member> _members = new();
     private Guid _fromId;
@@ -59,6 +75,7 @@ else
     private DateTime? _paidAt = DateTime.Today;
     private bool _busy;
     private bool _loading = true;
+    private bool _missing;
 
     protected override async Task OnInitializedAsync()
     {
@@ -66,8 +83,29 @@ else
         try
         {
             _members = await Sb.GetMembersAsync();
-            if (_members.Count >= 1) _fromId = _members[0].Id;
-            if (_members.Count >= 2) _toId   = _members[1].Id;
+
+            if (IsEdit)
+            {
+                var existing = await Sb.GetTransferAsync(TransferId!.Value);
+                if (existing is null) { _missing = true; return; }
+                _fromId = existing.FromMemberId;
+                _toId   = existing.ToMemberId;
+                _amount = existing.Amount;
+                _paidAt = existing.PaidAt.ToDateTime(TimeOnly.MinValue);
+            }
+            else
+            {
+                if (_members.Count >= 1) _fromId = _members[0].Id;
+                if (_members.Count >= 2) _toId   = _members[1].Id;
+
+                // Pré-remplissage depuis les query params (settle-up shortcut).
+                if (FromQuery.HasValue && _members.Any(m => m.Id == FromQuery.Value))
+                    _fromId = FromQuery.Value;
+                if (ToQuery.HasValue && _members.Any(m => m.Id == ToQuery.Value))
+                    _toId = ToQuery.Value;
+                if (AmountQuery.HasValue && AmountQuery.Value > 0)
+                    _amount = AmountQuery.Value;
+            }
         }
         catch (Exception ex)
         {
@@ -81,15 +119,23 @@ else
 
     private async Task Save()
     {
-        if (_fromId == _toId)        { Snackbar.Add("De et Vers doivent être différents.", Severity.Warning); return; }
-        if (_amount <= 0)            { Snackbar.Add("Montant invalide.", Severity.Warning); return; }
+        if (_fromId == _toId) { Snackbar.Add("De et Vers doivent être différents.", Severity.Warning); return; }
+        if (_amount <= 0)     { Snackbar.Add("Montant invalide.", Severity.Warning); return; }
 
         _busy = true;
         try
         {
             Session.Set(Id); // belt-and-suspenders : garantit que le header x-group-id est bien posé.
             var paid = DateOnly.FromDateTime(_paidAt ?? DateTime.Today);
-            await Sb.AddTransferAsync(Id, _fromId, _toId, _amount, paid);
+
+            if (IsEdit)
+            {
+                await Sb.UpdateTransferAsync(TransferId!.Value, _fromId, _toId, _amount, paid);
+            }
+            else
+            {
+                await Sb.AddTransferAsync(Id, _fromId, _toId, _amount, paid);
+            }
             Nav.NavigateTo($"g/{Id}");
         }
         catch (Exception ex)
@@ -101,5 +147,4 @@ else
             _busy = false;
         }
     }
-
 }

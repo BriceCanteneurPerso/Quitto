@@ -1,0 +1,45 @@
+@*
+    Boîte de confirmation Oui/Non, ouverte via IDialogService.
+
+    Helper d'usage :
+        var ok = await ConfirmDialog.AskAsync(DialogService, "Supprimer ?", "...", confirmLabel: "Supprimer", color: Color.Error);
+        if (!ok) return;
+*@
+
+<MudDialog>
+    <DialogContent>
+        <MudText Typo="Typo.body1">@Message</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">@CancelLabel</MudButton>
+        <MudButton Color="@Color" Variant="Variant.Filled" OnClick="Confirm">@ConfirmLabel</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter] public string Message { get; set; } = "";
+    [Parameter] public string ConfirmLabel { get; set; } = "Confirmer";
+    [Parameter] public string CancelLabel { get; set; } = "Annuler";
+    [Parameter] public Color Color { get; set; } = Color.Primary;
+
+    private void Confirm() => Dialog.Close(DialogResult.Ok(true));
+    private void Cancel() => Dialog.Cancel();
+
+    /// <summary>Helper d'ouverture. Renvoie true si l'utilisateur a confirmé, false sinon.</summary>
+    public static async Task<bool> AskAsync(IDialogService svc, string title, string message,
+        string confirmLabel = "Confirmer", string cancelLabel = "Annuler", Color color = Color.Primary)
+    {
+        var parameters = new DialogParameters
+        {
+            ["Message"] = message,
+            ["ConfirmLabel"] = confirmLabel,
+            ["CancelLabel"] = cancelLabel,
+            ["Color"] = color
+        };
+        var dialog = await svc.ShowAsync<ConfirmDialog>(title, parameters);
+        var result = await dialog.Result;
+        return result is not null && !result.Canceled && result.Data is true;
+    }
+}

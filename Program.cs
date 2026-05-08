@@ -1,11 +1,20 @@
 // Composition root du host Blazor WebAssembly Quitto.
 // Tout est Scoped : en WASM mono-utilisateur, Scoped == Singleton à l'échelle de l'onglet.
 
+using System.Globalization;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using MudBlazor.Services;
 using Quitto;
 using Quitto.Lib;
+
+// Format des nombres et dates côté FR ("1 234,56 €", dates dd/MM/yyyy).
+// On ne touche PAS à la culture invariant pour les sérialisations Supabase :
+// SupabaseClient utilise toujours InvariantCulture explicitement pour les
+// décimaux et DateOnly (cf. JsonSerializerOptions).
+var fr = new CultureInfo("fr-FR");
+CultureInfo.DefaultThreadCurrentCulture   = fr;
+CultureInfo.DefaultThreadCurrentUICulture = fr;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");

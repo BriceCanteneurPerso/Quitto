@@ -3,6 +3,7 @@
 @inject RecentGroupsService Recent
 @inject SupabaseClient Sb
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <PageTitle>Quitto</PageTitle>
 
@@ -38,8 +39,11 @@
 else if (_recent.Count == 0)
 {
     <MudPaper Class="pa-6 text-center" Elevation="0" Style="background: #fafafa;">
-        <MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Large" Color="Color.Default" />
-        <MudText Class="mt-2" Typo="Typo.body2">Aucun tricount pour l'instant.</MudText>
+        <MudIcon Icon="@Icons.Material.Outlined.Groups" Size="Size.Large" Color="Color.Default" Style="font-size: 56px;" />
+        <MudText Class="mt-3" Typo="Typo.h6">Aucun tricount</MudText>
+        <MudText Class="mt-1" Typo="Typo.body2" Color="Color.Default">
+            Crée ton premier groupe ou colle le lien d'un tricount existant.
+        </MudText>
     </MudPaper>
 }
 else
@@ -47,15 +51,29 @@ else
     <MudList T="RecentGroup" Dense="false">
         @foreach (var r in _recent)
         {
-            <MudListItem T="RecentGroup" OnClick="@(() => Nav.NavigateTo($"g/{r.Id}"))">
+            var rr = r;
+            <MudListItem T="RecentGroup" OnClick="@(() => Nav.NavigateTo($"g/{rr.Id}"))">
                 <AvatarContent>
-                    <MudAvatar Color="Color.Primary">@(InitialsOf(r.Name))</MudAvatar>
+                    <MudAvatar Color="Color.Primary">@(InitialsOf(rr.Name))</MudAvatar>
                 </AvatarContent>
                 <ChildContent>
-                    <MudText Typo="Typo.body1">@r.Name</MudText>
-                    <MudText Typo="Typo.caption" Color="Color.Default">
-                        Vu @FormatRelative(r.LastVisit)
-                    </MudText>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                        <div style="flex: 1; min-width: 0;">
+                            <MudText Typo="Typo.body1">@rr.Name</MudText>
+                            <MudText Typo="Typo.caption" Color="Color.Default">
+                                Vu @FormatRelative(rr.LastVisit)
+                            </MudText>
+                        </div>
+                        @* Wrapper indispensable : @onclick:stopPropagation neutralise
+                           le click bubbling vers MudListItem.OnClick (qui naviguerait sur
+                           le tricount). Le @onclick="@(() => {})" no-op est requis pour
+                           que Blazor enregistre l'event et applique stopPropagation. *@
+                        <div @onclick="@(() => {})" @onclick:stopPropagation="true" style="display: inline-flex;">
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           OnClick="@(() => ForgetAsync(rr))"
+                                           title="Oublier sur cet appareil" />
+                        </div>
+                    </MudStack>
                 </ChildContent>
             </MudListItem>
         }
@@ -92,9 +110,13 @@ else
 
     private async Task OpenJoinDialog()
     {
-        // On utilise le prompt natif pour rester ultra-léger en v1.
-        var url = await JsRuntime.InvokeAsync<string?>("prompt", "Colle le lien du tricount :");
+        var url = await PromptDialog.AskAsync(DialogService,
+            title: "Rejoindre un tricount",
+            message: "Colle le lien partagé par ton pote.",
+            placeholder: "https://…/g/<id>",
+            confirmLabel: "Ouvrir");
         if (string.IsNullOrWhiteSpace(url)) return;
+
         var seg = url.Trim().Split('/', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
         if (Guid.TryParse(seg, out var id))
         {
@@ -106,5 +128,16 @@ else
         }
     }
 
-    [Inject] private IJSRuntime JsRuntime { get; set; } = default!;
+    private async Task ForgetAsync(RecentGroup r)
+    {
+        var ok = await ConfirmDialog.AskAsync(DialogService,
+            title: "Oublier ce tricount ?",
+            message: $"Le tricount « {r.Name} » sera retiré de cet appareil. Tu peux toujours le rouvrir avec son lien. " +
+                     "Les données ne sont pas supprimées du serveur.",
+            confirmLabel: "Oublier",
+            color: Color.Warning);
+        if (!ok) return;
+        await Recent.ForgetAsync(r.Id);
+        _recent = await Recent.GetAllAsync();
+    }
 }

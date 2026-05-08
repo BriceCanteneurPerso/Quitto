@@ -6,6 +6,7 @@
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
+@inject IDialogService DialogService
 
 <PageTitle>Quitto — @(_group?.Name ?? "Tricount")</PageTitle>
 
@@ -24,7 +25,8 @@ else
     <div class="share-banner">
         <MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" />
         <span style="flex: 1;">Partage ce lien à tes potes pour qu'ils rejoignent le tricount.</span>
-        <MudIconButton Icon="@Icons.Material.Filled.ContentCopy" Size="Size.Small" OnClick="CopyLink" />
+        <MudIconButton Icon="@Icons.Material.Filled.QrCode2" Size="Size.Small" OnClick="ShowQr" title="QR code" />
+        <MudIconButton Icon="@Icons.Material.Filled.Share" Size="Size.Small" OnClick="ShareLink" title="Partager" />
     </div>
 
     <MudPaper Class="pa-4 mb-3" Elevation="0">
@@ -35,7 +37,7 @@ else
                     @_members.Count membres · @_expenses.Count dépenses
                 </MudText>
             </div>
-            <MudIconButton Icon="@Icons.Material.Filled.Share" OnClick="CopyLink" />
+            <MudIconButton Icon="@Icons.Material.Filled.Share" OnClick="ShareLink" />
         </MudStack>
     </MudPaper>
 
@@ -44,7 +46,11 @@ else
             @if (_expenses.Count == 0)
             {
                 <MudPaper Class="pa-6 text-center" Elevation="0" Style="background: #fafafa;">
-                    <MudText Typo="Typo.body2">Aucune dépense pour l'instant.</MudText>
+                    <MudIcon Icon="@Icons.Material.Outlined.ReceiptLong" Size="Size.Large" Color="Color.Default" Style="font-size: 56px;" />
+                    <MudText Class="mt-3" Typo="Typo.h6">Aucune dépense</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Default" Class="mt-1">
+                        Ajoute la première avec le + en bas à droite.
+                    </MudText>
                 </MudPaper>
             }
             else
@@ -52,27 +58,31 @@ else
                 <MudList T="Expense" Dense="false">
                     @foreach (var e in _expenses)
                     {
-                        var payer = _members.FirstOrDefault(m => m.Id == e.PayerId);
-                        var pcount = _participantsByExpense.GetValueOrDefault(e.Id)?.Count ?? 0;
+                        var ee = e;
+                        var payer = _members.FirstOrDefault(m => m.Id == ee.PayerId);
+                        var pcount = _participantsByExpense.GetValueOrDefault(ee.Id)?.Count ?? 0;
+                        var cat = CategoryDetector.FromKey(ee.Category);
                         <MudListItem T="Expense">
                             <AvatarContent>
-                                <MudAvatar Color="Color.Secondary">@(InitialsOf(payer?.Name ?? "?"))</MudAvatar>
+                                <MudAvatar Style="@($"background: {cat.Color}; color: white;")">
+                                    <MudIcon Icon="@cat.Icon" Style="color: white;" />
+                                </MudAvatar>
                             </AvatarContent>
                             <ChildContent>
                                 <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center">
                                     <div style="flex: 1; min-width: 0;">
-                                        <MudText Typo="Typo.body1">@e.Description</MudText>
+                                        <MudText Typo="Typo.body1">@ee.Description</MudText>
                                         <MudText Typo="Typo.caption" Color="Color.Default">
-                                            Payé par @(payer?.Name ?? "?") · @e.PaidAt.ToString("dd MMM") · @pcount part@(pcount > 1 ? "s" : "")
+                                            Payé par @(payer?.Name ?? "?") · @ee.PaidAt.ToString("dd MMM") · @pcount part@(pcount > 1 ? "s" : "")
                                         </MudText>
                                     </div>
                                     <MudText Typo="Typo.body1" Style="font-weight: 600;">
-                                        @FormatAmount(e.Amount)
+                                        @FormatAmount(ee.Amount)
                                     </MudText>
                                     <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
-                                                   OnClick="@(() => Nav.NavigateTo($"g/{Id}/expense/{e.Id}/edit"))" />
+                                                   OnClick="@(() => Nav.NavigateTo($"g/{Id}/expense/{ee.Id}/edit"))" />
                                     <MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small"
-                                                   OnClick="@(() => DeleteExpense(e))" />
+                                                   OnClick="@(() => DeleteExpense(ee))" />
                                 </MudStack>
                             </ChildContent>
                         </MudListItem>
@@ -93,58 +103,76 @@ else
                     var cls = b.Net > 0.005m ? "balance-positive"
                              : b.Net < -0.005m ? "balance-negative"
                              : "balance-zero";
-                    <MudStack Row="true" Justify="Justify.SpaceBetween" Class="my-1">
-                        <span>@member.Name</span>
+                    <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="my-1">
+                        <MudAvatar Size="Size.Small" Style="@($"background: {ColorOf(member)}; color: white; font-size: 12px;")">
+                            @InitialsOf(member.Name)
+                        </MudAvatar>
+                        <span style="flex: 1;">@member.Name</span>
                         <span class="@cls">@FormatSigned(b.Net)</span>
                     </MudStack>
                 }
             </MudPaper>
 
             <MudPaper Class="pa-3" Elevation="0">
-                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
-                    <MudText Typo="Typo.subtitle2">Remboursements suggérés</MudText>
-                    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.AddCard"
-                               OnClick="@(() => Nav.NavigateTo($"g/{Id}/transfer/new"))">
-                        Enregistrer
-                    </MudButton>
-                </MudStack>
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Remboursements suggérés</MudText>
                 @if (_settlements.Count == 0)
                 {
                     <MudText Typo="Typo.caption" Color="Color.Default">Tout est soldé. </MudText>
                 }
                 else
                 {
+                    <MudText Typo="Typo.caption" Color="Color.Default" Class="mb-2 d-block">
+                        Clique pour préremplir un remboursement.
+                    </MudText>
                     @foreach (var s in _settlements)
                     {
-                        var from = _members.First(m => m.Id == s.FromMemberId);
-                        var to   = _members.First(m => m.Id == s.ToMemberId);
-                        <MudStack Row="true" Justify="Justify.SpaceBetween" Class="my-1">
-                            <span>@from.Name → @to.Name</span>
-                            <span style="font-weight: 600;">@FormatAmount(s.Amount)</span>
+                        var ss = s;
+                        var from = _members.First(m => m.Id == ss.FromMemberId);
+                        var to   = _members.First(m => m.Id == ss.ToMemberId);
+                        <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center"
+                                  Class="my-1 settlement-row"
+                                  Style="cursor: pointer; padding: 6px 8px; border-radius: 6px;"
+                                  @onclick="@(() => SettleUp(ss))">
+                            <span>
+                                <strong>@from.Name</strong> → <strong>@to.Name</strong>
+                            </span>
+                            <span style="font-weight: 600;">@FormatAmount(ss.Amount)</span>
                         </MudStack>
                     }
                 }
 
-                @if (_transfers.Count > 0)
+                <MudDivider Class="my-3" />
+                <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="mb-2">
+                    <MudText Typo="Typo.subtitle2">Remboursements enregistrés</MudText>
+                    <MudButton Size="Size.Small" StartIcon="@Icons.Material.Filled.AddCard"
+                               OnClick="@(() => Nav.NavigateTo($"g/{Id}/transfer/new"))">
+                        Nouveau
+                    </MudButton>
+                </MudStack>
+
+                @if (_transfers.Count == 0)
                 {
-                    <MudDivider Class="my-3" />
-                    <MudText Typo="Typo.subtitle2" Class="mb-1">Remboursements enregistrés</MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Default">Aucun remboursement enregistré.</MudText>
+                }
+                else
+                {
                     @foreach (var t in _transfers)
                     {
-                        var from = _members.FirstOrDefault(m => m.Id == t.FromMemberId);
-                        var to   = _members.FirstOrDefault(m => m.Id == t.ToMemberId);
+                        var tt = t;
+                        var from = _members.FirstOrDefault(m => m.Id == tt.FromMemberId);
+                        var to   = _members.FirstOrDefault(m => m.Id == tt.ToMemberId);
                         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="my-1">
-                            <span>
+                            <span style="flex: 1; min-width: 0;">
                                 @(from?.Name ?? "?") → @(to?.Name ?? "?")
                                 <span style="color: #888; font-size: 12px;">
-                                    · @t.PaidAt.ToString("dd MMM")
+                                    · @tt.PaidAt.ToString("dd MMM")
                                 </span>
                             </span>
-                            <span>
-                                <span style="font-weight: 600;">@FormatAmount(t.Amount)</span>
-                                <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
-                                               OnClick="@(() => DeleteTransfer(t))" />
-                            </span>
+                            <span style="font-weight: 600;">@FormatAmount(tt.Amount)</span>
+                            <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
+                                           OnClick="@(() => Nav.NavigateTo($"g/{Id}/transfer/{tt.Id}/edit"))" />
+                            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small"
+                                           OnClick="@(() => DeleteTransfer(tt))" />
                         </MudStack>
                     }
                 }
@@ -155,11 +183,40 @@ else
             <MudList T="Member" Dense="false">
                 @foreach (var m in _members)
                 {
+                    var mm = m;
                     <MudListItem T="Member">
                         <AvatarContent>
-                            <MudAvatar Color="Color.Tertiary">@(InitialsOf(m.Name))</MudAvatar>
+                            <MudAvatar Style="@($"background: {ColorOf(mm)}; color: white;")">
+                                @InitialsOf(mm.Name)
+                            </MudAvatar>
                         </AvatarContent>
-                        <ChildContent>@m.Name</ChildContent>
+                        <ChildContent>
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
+                                <span>@mm.Name</span>
+                                <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small"
+                                         Dense="true" AnchorOrigin="Origin.BottomRight">
+                                    <MudMenuItem OnClick="@(() => RenameMember(mm))">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                            <MudIcon Icon="@Icons.Material.Filled.Edit" Size="Size.Small" />
+                                            <span>Renommer</span>
+                                        </MudStack>
+                                    </MudMenuItem>
+                                    <MudMenuItem OnClick="@(() => ChangeMemberColor(mm))">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                            <MudIcon Icon="@Icons.Material.Filled.ColorLens" Size="Size.Small" />
+                                            <span>Changer la couleur</span>
+                                        </MudStack>
+                                    </MudMenuItem>
+                                    <MudDivider />
+                                    <MudMenuItem OnClick="@(() => DeleteMember(mm))">
+                                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                            <MudIcon Icon="@Icons.Material.Filled.Delete" Size="Size.Small" Color="Color.Error" />
+                                            <span style="color: #d32f2f;">Supprimer</span>
+                                        </MudStack>
+                                    </MudMenuItem>
+                                </MudMenu>
+                            </MudStack>
+                        </ChildContent>
                     </MudListItem>
                 }
             </MudList>
@@ -173,6 +230,10 @@ else
             </MudStack>
         </MudTabPanel>
     </MudTabs>
+
+    <style>
+        .settlement-row:hover { background: #e8f3ee; }
+    </style>
 }
 
 @code {
@@ -231,8 +292,77 @@ else
         if (string.IsNullOrWhiteSpace(_newMemberName)) return;
         try
         {
-            await Sb.AddMemberAsync(Id, _newMemberName.Trim());
+            var color = MemberPalette.PickNext(_members.Select(m => m.Color));
+            await Sb.AddMemberAsync(Id, _newMemberName.Trim(), color);
             _newMemberName = "";
+            await Reload();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task RenameMember(Member m)
+    {
+        var newName = await PromptDialog.AskAsync(DialogService,
+            title: "Renommer",
+            message: $"Nouveau prénom pour « {m.Name} » :",
+            initialValue: m.Name,
+            confirmLabel: "Renommer");
+        if (string.IsNullOrWhiteSpace(newName) || newName == m.Name) return;
+        try
+        {
+            Session.Set(Id);
+            await Sb.UpdateMemberAsync(m.Id, newName, m.Color);
+            await Reload();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task ChangeMemberColor(Member m)
+    {
+        // Cycle simple : prochaine couleur de la palette pas encore prise par les autres.
+        var others = _members.Where(o => o.Id != m.Id).Select(o => o.Color);
+        var next = MemberPalette.PickNext(others);
+        try
+        {
+            Session.Set(Id);
+            await Sb.UpdateMemberAsync(m.Id, m.Name, next);
+            await Reload();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
+        }
+    }
+
+    private async Task DeleteMember(Member m)
+    {
+        Session.Set(Id);
+        try
+        {
+            var (expCount, trCount) = await Sb.GetMemberDependenciesAsync(m.Id);
+            if (expCount > 0 || trCount > 0)
+            {
+                Snackbar.Add(
+                    $"Impossible : {m.Name} apparaît dans {expCount} dépense(s) et {trCount} remboursement(s). " +
+                    "Retire-le d'abord de ces lignes.",
+                    Severity.Warning,
+                    opt => opt.RequireInteraction = true);
+                return;
+            }
+
+            var ok = await ConfirmDialog.AskAsync(DialogService,
+                title: "Supprimer ce membre ?",
+                message: $"Supprimer définitivement « {m.Name} » du tricount ?",
+                confirmLabel: "Supprimer", color: Color.Error);
+            if (!ok) return;
+
+            await Sb.DeleteMemberAsync(m.Id);
             await Reload();
         }
         catch (Exception ex)
@@ -243,10 +373,14 @@ else
 
     private async Task DeleteExpense(Expense e)
     {
-        var ok = await JS.InvokeAsync<bool>("confirm", $"Supprimer « {e.Description} » ?");
+        var ok = await ConfirmDialog.AskAsync(DialogService,
+            title: "Supprimer cette dépense ?",
+            message: $"Supprimer « {e.Description} » ({FormatAmount(e.Amount)}) ?",
+            confirmLabel: "Supprimer", color: Color.Error);
         if (!ok) return;
         try
         {
+            Session.Set(Id);
             await Sb.DeleteExpenseAsync(e.Id);
             await Reload();
         }
@@ -258,10 +392,14 @@ else
 
     private async Task DeleteTransfer(Transfer t)
     {
-        var ok = await JS.InvokeAsync<bool>("confirm", "Supprimer ce remboursement ?");
+        var ok = await ConfirmDialog.AskAsync(DialogService,
+            title: "Supprimer ce remboursement ?",
+            message: $"Supprimer le remboursement de {FormatAmount(t.Amount)} ?",
+            confirmLabel: "Supprimer", color: Color.Error);
         if (!ok) return;
         try
         {
+            Session.Set(Id);
             await Sb.DeleteTransferAsync(t.Id);
             await Reload();
         }
@@ -271,12 +409,31 @@ else
         }
     }
 
-    private async Task CopyLink()
+    private void SettleUp(Settlement s)
+    {
+        // Settle-up shortcut : on file les valeurs en query params, AddTransfer pré-remplit.
+        var url = $"g/{Id}/transfer/new?from={s.FromMemberId}&to={s.ToMemberId}&amount={s.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
+        Nav.NavigateTo(url);
+    }
+
+    private async Task ShareLink()
     {
         var url = Nav.Uri;
-        await JS.InvokeVoidAsync("navigator.clipboard.writeText", url);
-        Snackbar.Add("Lien copié.", Severity.Success);
+        var canShare = await JS.InvokeAsync<bool>("quitto.canShare");
+        if (canShare)
+        {
+            var shared = await JS.InvokeAsync<bool>("quitto.share",
+                "Quitto",
+                $"Rejoins le tricount « {_group?.Name} »",
+                url);
+            if (shared) return;
+            // L'utilisateur a cancellé — on tombe sur la copie comme fallback.
+        }
+        var ok = await JS.InvokeAsync<bool>("quitto.copyToClipboard", url);
+        Snackbar.Add(ok ? "Lien copié." : "Échec de la copie.", ok ? Severity.Success : Severity.Warning);
     }
+
+    private Task ShowQr() => QrCodeDialog.ShowAsync(DialogService, Nav.Uri);
 
     private string FormatAmount(decimal amount)
         => $"{amount:N2} {SymbolOf(_group?.Currency ?? "EUR")}";
@@ -303,6 +460,9 @@ else
         if (parts.Length == 1) return parts[0][..Math.Min(2, parts[0].Length)].ToUpperInvariant();
         return $"{parts[0][0]}{parts[^1][0]}".ToUpperInvariant();
     }
+
+    private static string ColorOf(Member m)
+        => string.IsNullOrEmpty(m.Color) ? MemberPalette.Colors[0] : m.Color;
 
     // Pas de Dispose() qui Clear la Session : Blazor instancie la page suivante AVANT
     // de disposer celle-ci, donc un Clear ici écraserait le Set fait par la page enfant

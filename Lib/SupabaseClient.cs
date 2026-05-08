@@ -132,6 +132,28 @@ public class SupabaseClient
     public Task<Member> AddMemberAsync(Guid groupId, string name, string? color = null)
         => InsertOneAsync<Member>("members", new { group_id = groupId, name, color });
 
+    public Task UpdateMemberAsync(Guid memberId, string name, string? color = null)
+        => UpdateAsync($"members?id=eq.{memberId}", new { name, color });
+
+    public Task DeleteMemberAsync(Guid memberId)
+        => DeleteAsync($"members?id=eq.{memberId}");
+
+    /// <summary>
+    /// Renvoie le nombre de dépenses où le membre est payeur ou participant,
+    /// + le nombre de transferts où il est expéditeur ou destinataire.
+    /// Sert au garde-fou de suppression d'un membre.
+    /// </summary>
+    public async Task<(int expenses, int transfers)> GetMemberDependenciesAsync(Guid memberId)
+    {
+        var asPayer = await SelectAsync<Expense>($"expenses?payer_id=eq.{memberId}&select=id");
+        var asParticipant = await SelectAsync<ExpenseParticipant>($"expense_participants?member_id=eq.{memberId}&select=expense_id");
+        var expenseIds = asPayer.Select(e => e.Id).Concat(asParticipant.Select(p => p.ExpenseId)).Distinct().Count();
+        var transfersFrom = await SelectAsync<Transfer>($"transfers?from_member_id=eq.{memberId}&select=id");
+        var transfersTo   = await SelectAsync<Transfer>($"transfers?to_member_id=eq.{memberId}&select=id");
+        var transfers = transfersFrom.Count + transfersTo.Count;
+        return (expenseIds, transfers);
+    }
+
     public Task<List<Expense>> GetExpensesAsync()
         => SelectAsync<Expense>("expenses?select=*&order=paid_at.desc,created_at.desc");
 
@@ -144,7 +166,7 @@ public class SupabaseClient
     public Task<List<ExpenseParticipant>> GetExpenseParticipantsForAsync(Guid expenseId)
         => SelectAsync<ExpenseParticipant>($"expense_participants?expense_id=eq.{expenseId}&select=*");
 
-    public async Task<Expense> AddExpenseAsync(Guid groupId, Guid payerId, decimal amount, string description, DateOnly paidAt, IEnumerable<Guid> participantIds, string? category = null)
+    public async Task<Expense> AddExpenseAsync(Guid groupId, Guid payerId, decimal amount, string description, DateOnly paidAt, IEnumerable<Guid> participantIds, string? category = null, string? notes = null)
     {
         var expense = await InsertOneAsync<Expense>("expenses", new
         {
@@ -153,6 +175,7 @@ public class SupabaseClient
             amount,
             description,
             category,
+            notes,
             paid_at = paidAt
         });
         var participants = participantIds
@@ -173,7 +196,7 @@ public class SupabaseClient
     /// participants (delete-all + re-insert). Plus simple qu'un diff INSERT/DELETE,
     /// volume négligeable.
     /// </summary>
-    public async Task UpdateExpenseAsync(Guid expenseId, Guid payerId, decimal amount, string description, DateOnly paidAt, IEnumerable<Guid> participantIds, string? category = null)
+    public async Task UpdateExpenseAsync(Guid expenseId, Guid payerId, decimal amount, string description, DateOnly paidAt, IEnumerable<Guid> participantIds, string? category = null, string? notes = null)
     {
         await UpdateAsync($"expenses?id=eq.{expenseId}", new
         {
@@ -181,6 +204,7 @@ public class SupabaseClient
             amount,
             description,
             category,
+            notes,
             paid_at = paidAt
         });
 
@@ -197,10 +221,22 @@ public class SupabaseClient
     public Task<List<Transfer>> GetTransfersAsync()
         => SelectAsync<Transfer>("transfers?select=*&order=paid_at.desc,created_at.desc");
 
+    public Task<Transfer?> GetTransferAsync(Guid id)
+        => SelectSingleAsync<Transfer>($"transfers?id=eq.{id}&select=*");
+
     public Task<Transfer> AddTransferAsync(Guid groupId, Guid fromMemberId, Guid toMemberId, decimal amount, DateOnly paidAt)
         => InsertOneAsync<Transfer>("transfers", new
         {
             group_id = groupId,
+            from_member_id = fromMemberId,
+            to_member_id = toMemberId,
+            amount,
+            paid_at = paidAt
+        });
+
+    public Task UpdateTransferAsync(Guid transferId, Guid fromMemberId, Guid toMemberId, decimal amount, DateOnly paidAt)
+        => UpdateAsync($"transfers?id=eq.{transferId}", new
+        {
             from_member_id = fromMemberId,
             to_member_id = toMemberId,
             amount,

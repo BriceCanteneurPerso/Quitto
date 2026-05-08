@@ -1,0 +1,55 @@
+@*
+    Dialogue qui affiche le lien du tricount sous forme de QR code (lib `qrious`
+    chargée dans index.html). Pratique pour partager phone-to-phone : l'autre
+    scanne, ouvre direct le lien.
+*@
+@inject IJSRuntime JS
+
+<MudDialog>
+    <DialogContent>
+        <div style="display: flex; flex-direction: column; align-items: center; gap: 12px;">
+            <canvas @ref="_canvas"></canvas>
+            <MudText Typo="Typo.caption" Color="Color.Default" Style="word-break: break-all; text-align: center;">
+                @Url
+            </MudText>
+            <MudButton StartIcon="@Icons.Material.Filled.ContentCopy" Size="Size.Small"
+                       OnClick="CopyLink">
+                Copier le lien
+            </MudButton>
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Fermer</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+    [Parameter] public string Url { get; set; } = "";
+
+    [Inject] private ISnackbar Snackbar { get; set; } = default!;
+
+    private ElementReference _canvas;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && !string.IsNullOrEmpty(Url))
+        {
+            await JS.InvokeVoidAsync("quitto.qrDraw", _canvas, Url, 240);
+        }
+    }
+
+    private async Task CopyLink()
+    {
+        var ok = await JS.InvokeAsync<bool>("quitto.copyToClipboard", Url);
+        Snackbar.Add(ok ? "Lien copié." : "Échec de la copie.", ok ? Severity.Success : Severity.Warning);
+    }
+
+    private void Close() => Dialog.Close();
+
+    public static Task ShowAsync(IDialogService svc, string url)
+    {
+        var parameters = new DialogParameters { ["Url"] = url };
+        return svc.ShowAsync<QrCodeDialog>("Partager", parameters);
+    }
+}

@@ -26,8 +26,65 @@ else
             @(IsEdit ? "Modifier la dépense" : "Nouvelle dépense")
         </h1>
 
-        <MudTextField @bind-Value="_description" Label="Description" Variant="Variant.Outlined"
-                      Placeholder="Resto" Class="mb-3" Immediate="true" />
+        @{
+            // Catégorie effective : ce que l'utilisateur a choisi explicitement, sinon
+            // la détection automatique depuis la description. Un override `_categoryKey`
+            // verrouille le choix utilisateur tant qu'il ne le clear pas.
+            var detected   = CategoryDetector.Detect(_description);
+            var effective  = string.IsNullOrEmpty(_categoryKey) ? detected : CategoryDetector.FromKey(_categoryKey);
+            var isAutoMode = string.IsNullOrEmpty(_categoryKey);
+        }
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3">
+            <MudAvatar Size="Size.Medium"
+                       Style="@($"background: {effective.Color}; color: white;")">
+                <MudIcon Icon="@effective.Icon" Style="color: white;" />
+            </MudAvatar>
+            <MudTextField @bind-Value="_description" Label="Description" Variant="Variant.Outlined"
+                          Placeholder="Resto, Courses Carrefour, Uber…" Immediate="true"
+                          Style="flex: 1;" />
+        </MudStack>
+
+        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="mb-3" Style="flex-wrap: wrap;">
+            <MudText Typo="Typo.caption" Color="Color.Default" Style="flex: 1; min-width: 0;">
+                @(isAutoMode
+                    ? (effective.Key == "other"
+                        ? "Catégorie : aucune détectée (tape un mot-clé ou choisis manuellement)"
+                        : $"Catégorie auto-détectée : {effective.Label}")
+                    : $"Catégorie : {effective.Label} (manuel)")
+            </MudText>
+            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Variant="Variant.Text"
+                     ActivationEvent="@MouseEvent.LeftClick">
+                <ActivatorContent>
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined"
+                               EndIcon="@Icons.Material.Filled.ArrowDropDown">
+                        Changer
+                    </MudButton>
+                </ActivatorContent>
+                <ChildContent>
+                    @foreach (var c in CategoryDetector.All)
+                    {
+                        var cc = c;
+                        <MudMenuItem OnClick="@(() => _categoryKey = cc.Key)">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@cc.Icon" Style="@($"color: {cc.Color};")" />
+                                <span>@cc.Label</span>
+                            </MudStack>
+                        </MudMenuItem>
+                    }
+                    @if (!isAutoMode)
+                    {
+                        <MudDivider />
+                        <MudMenuItem OnClick="@(() => _categoryKey = null)">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.AutoFixHigh" />
+                                <span>Auto (depuis la description)</span>
+                            </MudStack>
+                        </MudMenuItem>
+                    }
+                </ChildContent>
+            </MudMenu>
+        </MudStack>
 
         <MudNumericField @bind-Value="_amount" Label="Montant" Variant="Variant.Outlined"
                          Format="F2" Min="0.01m" Step="0.01m" Class="mb-3" />
@@ -64,6 +121,10 @@ else
             }
         </MudPaper>
 
+        <MudTextField @bind-Value="_notes" Label="Notes (optionnel)" Variant="Variant.Outlined"
+                      Placeholder="Détails, contexte, justificatif…" Lines="3"
+                      Class="mb-3" />
+
         <MudStack Row="true" Spacing="2" Justify="Justify.FlexEnd">
             <MudButton OnClick="@(() => Nav.NavigateTo($"g/{Id}"))">Annuler</MudButton>
             <MudButton Variant="Variant.Filled" Color="Color.Primary"
@@ -86,6 +147,8 @@ else
     private DateTime? _paidAt = DateTime.Today;
     private Guid _payerId;
     private HashSet<Guid> _participants = new();
+    private string? _categoryKey; // null = auto-detect, sinon override utilisateur
+    private string? _notes;
     private bool _busy;
     private bool _loading = true;
     private bool _missing;
@@ -105,6 +168,8 @@ else
                 _amount      = existing.Amount;
                 _paidAt      = existing.PaidAt.ToDateTime(TimeOnly.MinValue);
                 _payerId     = existing.PayerId;
+                _categoryKey = existing.Category;
+                _notes       = existing.Notes;
                 var parts = await Sb.GetExpenseParticipantsForAsync(existing.Id);
                 _participants = parts.Select(p => p.MemberId).ToHashSet();
             }
@@ -145,13 +210,20 @@ else
         {
             Session.Set(Id); // belt-and-suspenders : garantit que le header x-group-id est bien posé.
             var paid = DateOnly.FromDateTime(_paidAt ?? DateTime.Today);
+
+            // Catégorie effective : explicite > auto-détectée. Stockée en clé courte.
+            var resolvedCategory = string.IsNullOrEmpty(_categoryKey)
+                ? CategoryDetector.Detect(_description).Key
+                : _categoryKey;
+            var notes = string.IsNullOrWhiteSpace(_notes) ? null : _notes.Trim();
+
             if (IsEdit)
             {
-                await Sb.UpdateExpenseAsync(ExpenseId!.Value, _payerId, _amount, _description.Trim(), paid, _participants);
+                await Sb.UpdateExpenseAsync(ExpenseId!.Value, _payerId, _amount, _description.Trim(), paid, _participants, resolvedCategory, notes);
             }
             else
             {
-                await Sb.AddExpenseAsync(Id, _payerId, _amount, _description.Trim(), paid, _participants);
+                await Sb.AddExpenseAsync(Id, _payerId, _amount, _description.Trim(), paid, _participants, resolvedCategory, notes);
             }
             Nav.NavigateTo($"g/{Id}");
         }
