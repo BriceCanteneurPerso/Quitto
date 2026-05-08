@@ -29,5 +29,29 @@ window.quitto = {
         } catch {
             return false;
         }
+    },
+
+    // Déclenche un click sur un élément par id (pour ouvrir un input file caché).
+    clickElement: (id) => {
+        const el = document.getElementById(id);
+        if (el) el.click();
+    },
+
+    // Préférence système : utilisateur en mode sombre ?
+    prefersDark: () => window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches,
+
+    // Déclenche le téléchargement d'un fichier depuis une chaîne (CSV, JSON, etc.)
+    // côté client. Pas de roundtrip serveur, idéal pour Blazor WASM.
+    downloadFile: (filename, content, mimeType) => {
+        const blob = new Blob([content], { type: mimeType || "text/plain;charset=utf-8" });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        // setTimeout pour laisser le navigateur démarrer le DL avant de révoquer l'URL.
+        setTimeout(() => URL.revokeObjectURL(url), 1000);
     }
 };

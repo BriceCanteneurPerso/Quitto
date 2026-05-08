@@ -38,17 +38,25 @@ public class SupabaseClient
 
     private string Rest(string path) => $"{_cfg.Url.TrimEnd('/')}/rest/v1/{path.TrimStart('/')}";
 
-    private HttpRequestMessage Build(HttpMethod method, string path, object? body = null, string? prefer = null, Guid? overrideGroupId = null)
+    private HttpRequestMessage Build(HttpMethod method, string path, object? body = null, string? prefer = null, Guid? overrideGroupId = null, string? overrideSharePin = null)
     {
         var req = new HttpRequestMessage(method, Rest(path));
         req.Headers.TryAddWithoutValidation("apikey", _cfg.AnonKey);
         req.Headers.Authorization = new AuthenticationHeaderValue("Bearer", _cfg.AnonKey);
-        // Le header maison qui pilote la RLS. Un override est possible pour le cas
-        // INSERT du tout premier groupe (où GroupSession n'est pas encore positionnée).
+        // Le header `x-group-id` pilote la RLS principale. Override possible pour le
+        // INSERT du tout premier groupe (GroupSession pas encore positionnée).
         var groupId = overrideGroupId ?? _session.GroupId;
         if (groupId.HasValue)
         {
             req.Headers.TryAddWithoutValidation("x-group-id", groupId.Value.ToString());
+        }
+        // Le header `x-share-pin` est passé si le groupe en a un (RLS le check via
+        // is_authorized_for + current_share_pin). Override pour le cas où on update
+        // le pin lui-même (la nouvelle valeur entre en jeu).
+        var sharePin = overrideSharePin ?? _session.SharePin;
+        if (!string.IsNullOrEmpty(sharePin))
+        {
+            req.Headers.TryAddWithoutValidation("x-share-pin", sharePin);
         }
         if (!string.IsNullOrEmpty(prefer))
         {
@@ -89,24 +97,24 @@ public class SupabaseClient
     }
 
     /// <summary>Insert + return de la (les) ligne(s) insérée(s).</summary>
-    public async Task<List<T>> InsertAsync<T>(string table, object body, Guid? overrideGroupId = null)
+    public async Task<List<T>> InsertAsync<T>(string table, object body, Guid? overrideGroupId = null, string? overrideSharePin = null)
     {
-        using var req = Build(HttpMethod.Post, table, body, prefer: "return=representation", overrideGroupId);
+        using var req = Build(HttpMethod.Post, table, body, prefer: "return=representation", overrideGroupId, overrideSharePin);
         using var resp = await SendAsync(req);
         var stream = await resp.Content.ReadAsStreamAsync();
         return await JsonSerializer.DeserializeAsync<List<T>>(stream, Json) ?? new();
     }
 
-    public async Task<T> InsertOneAsync<T>(string table, object body, Guid? overrideGroupId = null)
+    public async Task<T> InsertOneAsync<T>(string table, object body, Guid? overrideGroupId = null, string? overrideSharePin = null)
     {
-        var list = await InsertAsync<T>(table, body, overrideGroupId);
+        var list = await InsertAsync<T>(table, body, overrideGroupId, overrideSharePin);
         if (list.Count == 0) throw new InvalidOperationException($"INSERT into {table} returned no rows");
         return list[0];
     }
 
-    public async Task UpdateAsync(string path, object body)
+    public async Task UpdateAsync(string path, object body, string? overrideSharePin = null)
     {
-        using var req = Build(HttpMethod.Patch, path, body);
+        using var req = Build(HttpMethod.Patch, path, body, overrideSharePin: overrideSharePin);
         using var resp = await SendAsync(req);
     }
 
@@ -155,7 +163,10 @@ public class SupabaseClient
     }
 
     public Task<List<Expense>> GetExpensesAsync()
-        => SelectAsync<Expense>("expenses?select=*&order=paid_at.desc,created_at.desc");
+        => SelectAsync<Expense>("expenses?select=*&deleted_at=is.null&order=paid_at.desc,created_at.desc");
+
+    public Task<List<Expense>> GetDeletedExpensesAsync()
+        => SelectAsync<Expense>("expenses?select=*&deleted_at=not.is.null&order=deleted_at.desc");
 
     public Task<Expense?> GetExpenseAsync(Guid id)
         => SelectSingleAsync<Expense>($"expenses?id=eq.{id}&select=*");
@@ -188,8 +199,22 @@ public class SupabaseClient
         return expense;
     }
 
+    /// <summary>
+    /// Soft-delete : marque la dépense comme supprimée. Le row reste en DB mais
+    /// est filtré par défaut. Restaurable via <see cref="RestoreExpenseAsync"/>.
+    /// </summary>
     public Task DeleteExpenseAsync(Guid expenseId)
-        => DeleteAsync($"expenses?id=eq.{expenseId}");
+        => UpdateAsync($"expenses?id=eq.{expenseId}", new { deleted_at = DateTime.UtcNow });
+
+    public Task RestoreExpenseAsync(Guid expenseId)
+        => UpdateAsync($"expenses?id=eq.{expenseId}", new { deleted_at = (DateTime?)null });
+
+    /// <summary>Hard-delete : retire la dépense et ses participants définitivement.</summary>
+    public async Task HardDeleteExpenseAsync(Guid expenseId)
+    {
+        await DeleteAsync($"expense_participants?expense_id=eq.{expenseId}");
+        await DeleteAsync($"expenses?id=eq.{expenseId}");
+    }
 
     /// <summary>
     /// Met à jour les colonnes éditables de la dépense puis remplace la liste des
@@ -219,7 +244,10 @@ public class SupabaseClient
     }
 
     public Task<List<Transfer>> GetTransfersAsync()
-        => SelectAsync<Transfer>("transfers?select=*&order=paid_at.desc,created_at.desc");
+        => SelectAsync<Transfer>("transfers?select=*&deleted_at=is.null&order=paid_at.desc,created_at.desc");
+
+    public Task<List<Transfer>> GetDeletedTransfersAsync()
+        => SelectAsync<Transfer>("transfers?select=*&deleted_at=not.is.null&order=deleted_at.desc");
 
     public Task<Transfer?> GetTransferAsync(Guid id)
         => SelectSingleAsync<Transfer>($"transfers?id=eq.{id}&select=*");
@@ -244,7 +272,19 @@ public class SupabaseClient
         });
 
     public Task DeleteTransferAsync(Guid transferId)
+        => UpdateAsync($"transfers?id=eq.{transferId}", new { deleted_at = DateTime.UtcNow });
+
+    public Task RestoreTransferAsync(Guid transferId)
+        => UpdateAsync($"transfers?id=eq.{transferId}", new { deleted_at = (DateTime?)null });
+
+    public Task HardDeleteTransferAsync(Guid transferId)
         => DeleteAsync($"transfers?id=eq.{transferId}");
+
+    // ---------- PIN ----------
+
+    /// <summary>Active ou désactive le PIN sur le groupe. Le pin est généré par le caller.</summary>
+    public Task SetGroupPinAsync(Guid groupId, string? newPin)
+        => UpdateAsync($"groups?id=eq.{groupId}", new { share_pin = newPin });
 }
 
 internal class DateOnlyJsonConverter : JsonConverter<DateOnly>

@@ -61,6 +61,29 @@ public class BalanceService
     }
 
     /// <summary>
+    /// Variante avec filtre temporel : on ne prend que les dépenses et les transferts
+    /// dont <c>paid_at</c> tombe dans la fenêtre [from, to] (bornes inclusives, null = ouvert).
+    /// Les participants des dépenses retenues suivent automatiquement.
+    /// </summary>
+    public List<Balance> ComputeFiltered(
+        IReadOnlyList<Member> members,
+        IReadOnlyList<Expense> expenses,
+        IReadOnlyList<ExpenseParticipant> participants,
+        IReadOnlyList<Transfer> transfers,
+        DateOnly? from, DateOnly? to)
+    {
+        bool InRange(DateOnly d) =>
+            (from is null || d >= from) && (to is null || d <= to);
+
+        var filteredExpenses     = expenses.Where(e => InRange(e.PaidAt)).ToList();
+        var keptExpenseIds       = filteredExpenses.Select(e => e.Id).ToHashSet();
+        var filteredParticipants = participants.Where(p => keptExpenseIds.Contains(p.ExpenseId)).ToList();
+        var filteredTransfers    = transfers.Where(t => InRange(t.PaidAt)).ToList();
+
+        return Compute(members, filteredExpenses, filteredParticipants, filteredTransfers);
+    }
+
+    /// <summary>
     /// Algorithme glouton : on matche le plus gros créditeur avec le plus gros débiteur,
     /// on transfère min(|cred|, |deb|), on répète jusqu'à zéro. Produit un nombre minimal
     /// de transferts (ou très proche du minimum) pour solder.

@@ -1,8 +1,11 @@
 @page "/g/{Id:guid}"
+@page "/g/{Id:guid}/{Pin}"
+@using System.Globalization
 @inject SupabaseClient Sb
 @inject GroupSession Session
 @inject RecentGroupsService Recent
 @inject BalanceService Balance
+@inject BackupService Backup
 @inject NavigationManager Nav
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
@@ -12,12 +15,32 @@
 
 @if (_loading)
 {
-    <MudProgressCircular Indeterminate="true" Class="mt-4" />
+    @* Skeletons qui miment la structure réelle de la page (banner + header + tabs).
+       Smoother que le spinner, perception du temps de chargement réduite. *@
+    <MudSkeleton Width="100%" Height="40px" Class="mb-3" />
+    <MudPaper Class="pa-4 mb-3" Elevation="0">
+        <MudSkeleton Width="60%" Height="28px" />
+        <MudSkeleton Width="30%" Height="16px" Class="mt-1" />
+    </MudPaper>
+    <MudSkeleton Width="100%" Height="48px" Class="mb-3" />
+    @for (int i = 0; i < 5; i++)
+    {
+        <MudPaper Class="pa-3 mb-2" Elevation="0">
+            <MudStack Row="true" Spacing="2" AlignItems="AlignItems.Center">
+                <MudSkeleton SkeletonType="SkeletonType.Circle" Width="40px" Height="40px" />
+                <div style="flex: 1;">
+                    <MudSkeleton Width="70%" Height="20px" />
+                    <MudSkeleton Width="40%" Height="14px" />
+                </div>
+                <MudSkeleton Width="60px" Height="20px" />
+            </MudStack>
+        </MudPaper>
+    }
 }
 else if (_group is null)
 {
     <MudAlert Severity="Severity.Error" Class="mt-3">
-        Tricount introuvable. Le lien est-il correct ?
+        Tricount introuvable. Le lien est-il correct, et le PIN éventuellement requis est-il bien dans l'URL ?
     </MudAlert>
 }
 else
@@ -32,31 +55,131 @@ else
     <MudPaper Class="pa-4 mb-3" Elevation="0">
         <MudStack Row="true" AlignItems="AlignItems.Center" Justify="Justify.SpaceBetween">
             <div>
-                <h1 style="font-size: 22px; margin: 0;">@_group.Name</h1>
+                <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="1">
+                    <h1 style="font-size: 22px; margin: 0;">@_group.Name</h1>
+                    @if (!string.IsNullOrEmpty(_group.SharePin))
+                    {
+                        <MudTooltip Text="Tricount verrouillé avec un PIN">
+                            <MudIcon Icon="@Icons.Material.Filled.Lock" Size="Size.Small" Color="Color.Success" />
+                        </MudTooltip>
+                    }
+                </MudStack>
                 <MudText Typo="Typo.caption" Color="Color.Default">
                     @_members.Count membres · @_expenses.Count dépenses
                 </MudText>
             </div>
-            <MudIconButton Icon="@Icons.Material.Filled.Share" OnClick="ShareLink" />
+            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="0">
+                <MudIconButton Icon="@Icons.Material.Filled.Share" OnClick="ShareLink" />
+                <MudMenu Icon="@Icons.Material.Filled.MoreVert" AnchorOrigin="Origin.BottomRight">
+                    @if (string.IsNullOrEmpty(_group.SharePin))
+                    {
+                        <MudMenuItem OnClick="ActivatePin">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.LockOpen" Size="Size.Small" />
+                                <span>Verrouiller avec un PIN</span>
+                            </MudStack>
+                        </MudMenuItem>
+                    }
+                    else
+                    {
+                        <MudMenuItem OnClick="RegeneratePin">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.Refresh" Size="Size.Small" />
+                                <span>Régénérer le PIN</span>
+                            </MudStack>
+                        </MudMenuItem>
+                        <MudMenuItem OnClick="DisablePin">
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                                <MudIcon Icon="@Icons.Material.Filled.LockOpen" Size="Size.Small" />
+                                <span>Désactiver le PIN</span>
+                            </MudStack>
+                        </MudMenuItem>
+                    }
+                    <MudDivider />
+                    <MudMenuItem OnClick="ExportCsv">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.GridOn" Size="Size.Small" />
+                            <span>Exporter en CSV</span>
+                        </MudStack>
+                    </MudMenuItem>
+                    <MudMenuItem OnClick="ExportJson">
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Backup" Size="Size.Small" />
+                            <span>Sauvegarde JSON</span>
+                        </MudStack>
+                    </MudMenuItem>
+                    <MudMenuItem OnClick='@(() => JS.InvokeVoidAsync("quitto.clickElement", "quitto-restore-input"))'>
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2">
+                            <MudIcon Icon="@Icons.Material.Filled.Restore" Size="Size.Small" />
+                            <span>Cloner depuis JSON…</span>
+                        </MudStack>
+                    </MudMenuItem>
+                </MudMenu>
+                @* Input file caché : déclenché par le menu via clickElement(). On ne
+                   peut pas mettre l'input visible directement dans le menu, MudMenu
+                   wrap son contenu dans un <button> qui swallow le click natif. *@
+                <InputFile id="quitto-restore-input" OnChange="OnRestoreFileSelected"
+                           accept=".json" style="display:none" />
+            </MudStack>
         </MudStack>
     </MudPaper>
 
     <MudTabs Outlined="false" Position="Position.Top" Rounded="false" KeepPanelsAlive="true">
+        @* ============================ DÉPENSES ============================ *@
         <MudTabPanel Text="Dépenses" Icon="@Icons.Material.Filled.Receipt">
+            <MudPaper Class="pa-2 mb-2" Elevation="0" Style="background: #fafafa; position: sticky; top: 0; z-index: 5;">
+                <MudTextField @bind-Value="_search" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Placeholder="Rechercher (description, payeur…)"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search"
+                              Immediate="true" Class="mb-1" />
+                <MudStack Row="true" Spacing="1" Style="flex-wrap: wrap;">
+                    @foreach (var c in _categoriesPresent)
+                    {
+                        var cc = c;
+                        var on = _categoryFilter.Contains(cc.Key);
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(on ? Color.Primary : Color.Default)"
+                                 Variant="@(on ? Variant.Filled : Variant.Outlined)"
+                                 OnClick="@(() => ToggleCategoryFilter(cc.Key))"
+                                 Style="@($"border-color: {cc.Color};")">
+                            <MudIcon Icon="@cc.Icon" Size="Size.Small"
+                                     Style="@(on ? "color: white;" : $"color: {cc.Color};")" />
+                            <span style="margin-left: 4px;">@cc.Label</span>
+                        </MudChip>
+                    }
+                    @if (_categoryFilter.Count > 0 || !string.IsNullOrEmpty(_search))
+                    {
+                        <MudButton Size="Size.Small" Variant="Variant.Text"
+                                   OnClick="ClearExpenseFilters">
+                            Effacer
+                        </MudButton>
+                    }
+                </MudStack>
+            </MudPaper>
+
+            @{
+                var visibleExpenses = FilteredExpenses();
+            }
             @if (_expenses.Count == 0)
             {
                 <MudPaper Class="pa-6 text-center" Elevation="0" Style="background: #fafafa;">
-                    <MudIcon Icon="@Icons.Material.Outlined.ReceiptLong" Size="Size.Large" Color="Color.Default" Style="font-size: 56px;" />
+                    <MudIcon Icon="@Icons.Material.Outlined.ReceiptLong" Color="Color.Default" Style="font-size: 56px;" />
                     <MudText Class="mt-3" Typo="Typo.h6">Aucune dépense</MudText>
                     <MudText Typo="Typo.body2" Color="Color.Default" Class="mt-1">
                         Ajoute la première avec le + en bas à droite.
                     </MudText>
                 </MudPaper>
             }
+            else if (visibleExpenses.Count == 0)
+            {
+                <MudPaper Class="pa-6 text-center" Elevation="0" Style="background: #fafafa;">
+                    <MudText Typo="Typo.body2" Color="Color.Default">Aucune dépense ne correspond aux filtres.</MudText>
+                </MudPaper>
+            }
             else
             {
                 <MudList T="Expense" Dense="false">
-                    @foreach (var e in _expenses)
+                    @foreach (var e in visibleExpenses)
                     {
                         var ee = e;
                         var payer = _members.FirstOrDefault(m => m.Id == ee.PayerId);
@@ -94,10 +217,36 @@ else
                     OnClick="@(() => Nav.NavigateTo($"g/{Id}/expense/new"))" />
         </MudTabPanel>
 
+        @* ============================ SOLDES ============================ *@
         <MudTabPanel Text="Soldes" Icon="@Icons.Material.Filled.Calculate">
             <MudPaper Class="pa-3 mb-3" Elevation="0">
-                <MudText Typo="Typo.subtitle2" Class="mb-2">Solde par membre</MudText>
-                @foreach (var b in _balances.OrderByDescending(b => b.Net))
+                <MudStack Row="true" Spacing="1" AlignItems="AlignItems.Center" Class="mb-2" Style="flex-wrap: wrap;">
+                    <MudText Typo="Typo.subtitle2" Style="margin-right: 8px;">Période :</MudText>
+                    @foreach (var preset in new[] { BalancePeriod.All, BalancePeriod.ThisMonth, BalancePeriod.LastMonth, BalancePeriod.Custom })
+                    {
+                        var p = preset;
+                        var on = _balancePeriod == p;
+                        <MudChip T="string" Size="Size.Small"
+                                 Color="@(on ? Color.Primary : Color.Default)"
+                                 Variant="@(on ? Variant.Filled : Variant.Outlined)"
+                                 OnClick="@(() => SetBalancePeriod(p))">
+                            @LabelOf(p)
+                        </MudChip>
+                    }
+                </MudStack>
+
+                @if (_balancePeriod == BalancePeriod.Custom)
+                {
+                    <MudStack Row="true" Spacing="2" Class="mb-2">
+                        <MudDatePicker @bind-Date="_balanceFromDate" Label="Du" Variant="Variant.Outlined"
+                                       Margin="Margin.Dense" DateFormat="dd/MM/yyyy" />
+                        <MudDatePicker @bind-Date="_balanceToDate" Label="Au" Variant="Variant.Outlined"
+                                       Margin="Margin.Dense" DateFormat="dd/MM/yyyy" />
+                    </MudStack>
+                }
+
+                <MudText Typo="Typo.subtitle2" Class="mb-2 mt-2">Solde par membre</MudText>
+                @foreach (var b in FilteredBalances().OrderByDescending(b => b.Net))
                 {
                     var member = _members.First(m => m.Id == b.MemberId);
                     var cls = b.Net > 0.005m ? "balance-positive"
@@ -115,16 +264,17 @@ else
 
             <MudPaper Class="pa-3" Elevation="0">
                 <MudText Typo="Typo.subtitle2" Class="mb-2">Remboursements suggérés</MudText>
-                @if (_settlements.Count == 0)
+                @{ var settlements = FilteredSettlements(); }
+                @if (settlements.Count == 0)
                 {
-                    <MudText Typo="Typo.caption" Color="Color.Default">Tout est soldé. </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Default">Tout est soldé sur cette période.</MudText>
                 }
                 else
                 {
                     <MudText Typo="Typo.caption" Color="Color.Default" Class="mb-2 d-block">
                         Clique pour préremplir un remboursement.
                     </MudText>
-                    @foreach (var s in _settlements)
+                    @foreach (var s in settlements)
                     {
                         var ss = s;
                         var from = _members.First(m => m.Id == ss.FromMemberId);
@@ -133,9 +283,7 @@ else
                                   Class="my-1 settlement-row"
                                   Style="cursor: pointer; padding: 6px 8px; border-radius: 6px;"
                                   @onclick="@(() => SettleUp(ss))">
-                            <span>
-                                <strong>@from.Name</strong> → <strong>@to.Name</strong>
-                            </span>
+                            <span><strong>@from.Name</strong> → <strong>@to.Name</strong></span>
                             <span style="font-weight: 600;">@FormatAmount(ss.Amount)</span>
                         </MudStack>
                     }
@@ -164,9 +312,7 @@ else
                         <MudStack Row="true" Justify="Justify.SpaceBetween" AlignItems="AlignItems.Center" Class="my-1">
                             <span style="flex: 1; min-width: 0;">
                                 @(from?.Name ?? "?") → @(to?.Name ?? "?")
-                                <span style="color: #888; font-size: 12px;">
-                                    · @tt.PaidAt.ToString("dd MMM")
-                                </span>
+                                <span style="color: #888; font-size: 12px;">· @tt.PaidAt.ToString("dd MMM")</span>
                             </span>
                             <span style="font-weight: 600;">@FormatAmount(tt.Amount)</span>
                             <MudIconButton Icon="@Icons.Material.Filled.Edit" Size="Size.Small"
@@ -179,6 +325,84 @@ else
             </MudPaper>
         </MudTabPanel>
 
+        @* ============================ STATS ============================ *@
+        <MudTabPanel Text="Stats" Icon="@Icons.Material.Filled.BarChart">
+            @if (_expenses.Count == 0)
+            {
+                <MudPaper Class="pa-6 text-center" Elevation="0" Style="background: #fafafa;">
+                    <MudText Typo="Typo.body2" Color="Color.Default">Pas encore de dépense à analyser.</MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudPaper Class="pa-4 mb-3 text-center" Elevation="0">
+                    <MudText Typo="Typo.caption" Color="Color.Default">Total dépensé</MudText>
+                    <MudText Typo="Typo.h4" Style="font-weight: 700; color: #1f6f54;">
+                        @FormatAmount(StatsTotal())
+                    </MudText>
+                    <MudText Typo="Typo.caption" Color="Color.Default">
+                        sur @_expenses.Count dépense@(_expenses.Count > 1 ? "s" : "")
+                    </MudText>
+                </MudPaper>
+
+                <MudPaper Class="pa-3 mb-3" Elevation="0">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Par catégorie</MudText>
+                    @foreach (var c in StatsByCategory())
+                    {
+                        var pct = StatsTotal() > 0 ? (double)(c.Total / StatsTotal()) * 100 : 0;
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="my-2">
+                            <MudIcon Icon="@c.Category.Icon" Style="@($"color: {c.Category.Color};")" />
+                            <div style="flex: 1; min-width: 0;">
+                                <MudStack Row="true" Justify="Justify.SpaceBetween">
+                                    <span>@c.Category.Label</span>
+                                    <span style="font-weight: 600;">@FormatAmount(c.Total)</span>
+                                </MudStack>
+                                <div style="background: #eee; border-radius: 3px; height: 6px; margin-top: 4px;">
+                                    <div style="@($"background: {c.Category.Color}; width: {pct.ToString("F1", CultureInfo.InvariantCulture)}%; height: 6px; border-radius: 3px;")"></div>
+                                </div>
+                                <MudText Typo="Typo.caption" Color="Color.Default">@($"{pct:F1} %")</MudText>
+                            </div>
+                        </MudStack>
+                    }
+                </MudPaper>
+
+                <MudPaper Class="pa-3 mb-3" Elevation="0">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Par membre</MudText>
+                    @foreach (var m in StatsByMember())
+                    {
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="my-1">
+                            <MudAvatar Size="Size.Small" Style="@($"background: {ColorOf(m.Member)}; color: white; font-size: 12px;")">
+                                @InitialsOf(m.Member.Name)
+                            </MudAvatar>
+                            <div style="flex: 1; min-width: 0;">
+                                <MudText Typo="Typo.body2">@m.Member.Name</MudText>
+                                <MudText Typo="Typo.caption" Color="Color.Default">
+                                    A avancé @FormatAmount(m.Paid) · A consommé @FormatAmount(m.Owed)
+                                </MudText>
+                            </div>
+                        </MudStack>
+                    }
+                </MudPaper>
+
+                <MudPaper Class="pa-3" Elevation="0">
+                    <MudText Typo="Typo.subtitle2" Class="mb-2">Par mois</MudText>
+                    @{ var maxMonth = StatsMaxMonth(); }
+                    @foreach (var m in StatsByMonth())
+                    {
+                        var w = maxMonth > 0 ? (double)(m.Total / maxMonth) * 100 : 0;
+                        <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="my-1">
+                            <span style="min-width: 80px; font-size: 13px;">@m.Month.ToString("MMM yyyy")</span>
+                            <div style="flex: 1; background: #eee; border-radius: 3px; height: 14px; position: relative;">
+                                <div style="@($"background: #1f6f54; width: {w.ToString("F1", CultureInfo.InvariantCulture)}%; height: 14px; border-radius: 3px;")"></div>
+                            </div>
+                            <span style="min-width: 80px; text-align: right; font-weight: 600;">@FormatAmount(m.Total)</span>
+                        </MudStack>
+                    }
+                </MudPaper>
+            }
+        </MudTabPanel>
+
+        @* ============================ MEMBRES ============================ *@
         <MudTabPanel Text="Membres" Icon="@Icons.Material.Filled.Group">
             <MudList T="Member" Dense="false">
                 @foreach (var m in _members)
@@ -229,6 +453,88 @@ else
                 </MudButton>
             </MudStack>
         </MudTabPanel>
+
+        @* ============================ CORBEILLE ============================ *@
+        <MudTabPanel Text="Corbeille" Icon="@Icons.Material.Filled.Delete">
+            @if (_deletedExpenses.Count == 0 && _deletedTransfers.Count == 0)
+            {
+                <MudPaper Class="pa-6 text-center" Elevation="0" Style="background: #fafafa;">
+                    <MudIcon Icon="@Icons.Material.Outlined.DeleteOutline" Color="Color.Default" Style="font-size: 56px;" />
+                    <MudText Class="mt-3" Typo="Typo.h6">Corbeille vide</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Default" Class="mt-1">
+                        Les dépenses et remboursements supprimés s'affichent ici. Tu peux les restaurer ou les supprimer définitivement.
+                    </MudText>
+                </MudPaper>
+            }
+            else
+            {
+                @if (_deletedExpenses.Count > 0)
+                {
+                    <MudPaper Class="pa-3 mb-3" Elevation="0">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Dépenses supprimées</MudText>
+                        @foreach (var e in _deletedExpenses)
+                        {
+                            var ee = e;
+                            var payer = _members.FirstOrDefault(m => m.Id == ee.PayerId);
+                            var cat = CategoryDetector.FromKey(ee.Category);
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="my-1">
+                                <MudAvatar Size="Size.Small" Style="@($"background: {cat.Color}; color: white;")">
+                                    <MudIcon Icon="@cat.Icon" Style="color: white;" Size="Size.Small" />
+                                </MudAvatar>
+                                <div style="flex: 1; min-width: 0;">
+                                    <MudText Typo="Typo.body2">@ee.Description</MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Default">
+                                        @FormatAmount(ee.Amount) · @(payer?.Name ?? "?")
+                                        @if (ee.DeletedAt.HasValue)
+                                        {
+                                            <span> · supprimée @FormatRelative(ee.DeletedAt.Value)</span>
+                                        }
+                                    </MudText>
+                                </div>
+                                <MudIconButton Icon="@Icons.Material.Filled.Restore" Size="Size.Small"
+                                               Color="Color.Primary" OnClick="@(() => RestoreExpense(ee))"
+                                               title="Restaurer" />
+                                <MudIconButton Icon="@Icons.Material.Filled.DeleteForever" Size="Size.Small"
+                                               Color="Color.Error" OnClick="@(() => HardDeleteExpense(ee))"
+                                               title="Supprimer définitivement" />
+                            </MudStack>
+                        }
+                    </MudPaper>
+                }
+
+                @if (_deletedTransfers.Count > 0)
+                {
+                    <MudPaper Class="pa-3" Elevation="0">
+                        <MudText Typo="Typo.subtitle2" Class="mb-2">Remboursements supprimés</MudText>
+                        @foreach (var t in _deletedTransfers)
+                        {
+                            var tt = t;
+                            var from = _members.FirstOrDefault(m => m.Id == tt.FromMemberId);
+                            var to   = _members.FirstOrDefault(m => m.Id == tt.ToMemberId);
+                            <MudStack Row="true" AlignItems="AlignItems.Center" Spacing="2" Class="my-1">
+                                <div style="flex: 1; min-width: 0;">
+                                    <MudText Typo="Typo.body2">
+                                        @(from?.Name ?? "?") → @(to?.Name ?? "?") · @FormatAmount(tt.Amount)
+                                    </MudText>
+                                    <MudText Typo="Typo.caption" Color="Color.Default">
+                                        @if (tt.DeletedAt.HasValue)
+                                        {
+                                            <span>supprimé @FormatRelative(tt.DeletedAt.Value)</span>
+                                        }
+                                    </MudText>
+                                </div>
+                                <MudIconButton Icon="@Icons.Material.Filled.Restore" Size="Size.Small"
+                                               Color="Color.Primary" OnClick="@(() => RestoreTransfer(tt))"
+                                               title="Restaurer" />
+                                <MudIconButton Icon="@Icons.Material.Filled.DeleteForever" Size="Size.Small"
+                                               Color="Color.Error" OnClick="@(() => HardDeleteTransfer(tt))"
+                                               title="Supprimer définitivement" />
+                            </MudStack>
+                        }
+                    </MudPaper>
+                }
+            }
+        </MudTabPanel>
     </MudTabs>
 
     <style>
@@ -238,20 +544,46 @@ else
 
 @code {
     [Parameter] public Guid Id { get; set; }
+    [Parameter] public string? Pin { get; set; }
 
     private Group? _group;
     private List<Member> _members = new();
     private List<Expense> _expenses = new();
+    private List<ExpenseParticipant> _allParticipants = new();
     private List<Transfer> _transfers = new();
+    private List<Expense> _deletedExpenses = new();
+    private List<Transfer> _deletedTransfers = new();
     private Dictionary<Guid, List<Guid>> _participantsByExpense = new();
-    private List<Balance> _balances = new();
-    private List<Settlement> _settlements = new();
     private bool _loading = true;
     private string _newMemberName = "";
 
+    // Filtres Dépenses
+    private string _search = "";
+    private HashSet<string> _categoryFilter = new();
+
+    // Filtre Soldes
+    private enum BalancePeriod { All, ThisMonth, LastMonth, Custom }
+    private BalancePeriod _balancePeriod = BalancePeriod.All;
+    private DateTime? _balanceFromDate;
+    private DateTime? _balanceToDate;
+
+    private List<QuittoCategory> _categoriesPresent => _expenses
+        .Select(e => CategoryDetector.FromKey(e.Category))
+        .DistinctBy(c => c.Key)
+        .OrderBy(c => c.Label)
+        .ToList();
+
     protected override async Task OnInitializedAsync()
     {
-        Session.Set(Id);
+        // Pin priorité : URL > localStorage (RecentGroupsService). Permet d'accéder
+        // sans pin URL si on l'a déjà visité (et qu'il a été sauvé en local).
+        var pin = Pin;
+        if (string.IsNullOrEmpty(pin))
+        {
+            var known = await Recent.GetAsync(Id);
+            pin = known?.Pin;
+        }
+        Session.Set(Id, pin);
         await Reload();
     }
 
@@ -263,19 +595,20 @@ else
             _group = await Sb.GetGroupAsync(Id);
             if (_group is null) { _loading = false; return; }
 
-            await Recent.RememberAsync(_group.Id, _group.Name);
+            // On stocke en local le PIN observé sur le groupe — important pour
+            // les liens reçus sans pin (le serveur, lui, le voit dans la row).
+            await Recent.RememberAsync(_group.Id, _group.Name, _group.SharePin);
 
-            _members  = await Sb.GetMembersAsync();
-            _expenses = await Sb.GetExpensesAsync();
-            var parts = await Sb.GetExpenseParticipantsAsync();
-            _transfers = await Sb.GetTransfersAsync();
+            _members          = await Sb.GetMembersAsync();
+            _expenses         = await Sb.GetExpensesAsync();
+            _allParticipants  = await Sb.GetExpenseParticipantsAsync();
+            _transfers        = await Sb.GetTransfersAsync();
+            _deletedExpenses  = await Sb.GetDeletedExpensesAsync();
+            _deletedTransfers = await Sb.GetDeletedTransfersAsync();
 
-            _participantsByExpense = parts
+            _participantsByExpense = _allParticipants
                 .GroupBy(p => p.ExpenseId)
                 .ToDictionary(g => g.Key, g => g.Select(p => p.MemberId).ToList());
-
-            _balances = Balance.Compute(_members, _expenses, parts, _transfers);
-            _settlements = Balance.Simplify(_balances);
         }
         catch (Exception ex)
         {
@@ -287,6 +620,147 @@ else
         }
     }
 
+    private string ShareUrl()
+    {
+        // Lien à partager : inclut le pin s'il existe.
+        var baseUri = Nav.BaseUri.TrimEnd('/');
+        return string.IsNullOrEmpty(_group?.SharePin)
+            ? $"{baseUri}/g/{Id}"
+            : $"{baseUri}/g/{Id}/{_group.SharePin}";
+    }
+
+    // ---------- Filtre Dépenses ----------
+
+    private List<Expense> FilteredExpenses()
+    {
+        var search = _search?.Trim().ToLowerInvariant();
+        return _expenses.Where(e =>
+        {
+            if (_categoryFilter.Count > 0 && !_categoryFilter.Contains(e.Category ?? "other"))
+                return false;
+            if (!string.IsNullOrEmpty(search))
+            {
+                var payerName = _members.FirstOrDefault(m => m.Id == e.PayerId)?.Name ?? "";
+                var hay = $"{e.Description} {payerName} {e.Notes}".ToLowerInvariant();
+                if (!hay.Contains(search)) return false;
+            }
+            return true;
+        }).ToList();
+    }
+
+    private void ToggleCategoryFilter(string key)
+    {
+        if (!_categoryFilter.Add(key)) _categoryFilter.Remove(key);
+    }
+
+    private void ClearExpenseFilters()
+    {
+        _search = "";
+        _categoryFilter.Clear();
+    }
+
+    // ---------- Filtre Soldes ----------
+
+    private void SetBalancePeriod(BalancePeriod p)
+    {
+        _balancePeriod = p;
+        if (p == BalancePeriod.Custom)
+        {
+            _balanceFromDate ??= DateTime.Today.AddMonths(-1);
+            _balanceToDate   ??= DateTime.Today;
+        }
+    }
+
+    private (DateOnly?, DateOnly?) ResolveBalanceRange()
+    {
+        var today = DateOnly.FromDateTime(DateTime.Today);
+        return _balancePeriod switch
+        {
+            BalancePeriod.All => (null, null),
+            BalancePeriod.ThisMonth => (new DateOnly(today.Year, today.Month, 1), today),
+            BalancePeriod.LastMonth => Last(today),
+            BalancePeriod.Custom    => (
+                _balanceFromDate is null ? null : DateOnly.FromDateTime(_balanceFromDate.Value),
+                _balanceToDate   is null ? null : DateOnly.FromDateTime(_balanceToDate.Value)),
+            _ => (null, null)
+        };
+
+        static (DateOnly?, DateOnly?) Last(DateOnly today)
+        {
+            var firstOfThisMonth = new DateOnly(today.Year, today.Month, 1);
+            var lastDayLastMonth = firstOfThisMonth.AddDays(-1);
+            var firstDayLastMonth = new DateOnly(lastDayLastMonth.Year, lastDayLastMonth.Month, 1);
+            return (firstDayLastMonth, lastDayLastMonth);
+        }
+    }
+
+    private static string LabelOf(BalancePeriod p) => p switch
+    {
+        BalancePeriod.All => "Toutes",
+        BalancePeriod.ThisMonth => "Ce mois",
+        BalancePeriod.LastMonth => "Mois dernier",
+        BalancePeriod.Custom => "Personnalisé",
+        _ => "?"
+    };
+
+    private List<Balance> FilteredBalances()
+    {
+        var (from, to) = ResolveBalanceRange();
+        return Balance.ComputeFiltered(_members, _expenses, _allParticipants, _transfers, from, to);
+    }
+
+    private List<Settlement> FilteredSettlements() => Balance.Simplify(FilteredBalances());
+
+    // ---------- Stats ----------
+
+    private decimal StatsTotal() => _expenses.Sum(e => e.Amount);
+
+    private List<(QuittoCategory Category, decimal Total)> StatsByCategory()
+        => _expenses
+            .GroupBy(e => e.Category ?? "other")
+            .Select(g => (Category: CategoryDetector.FromKey(g.Key), Total: g.Sum(e => e.Amount)))
+            .OrderByDescending(x => x.Total)
+            .ToList();
+
+    private List<(Member Member, decimal Paid, decimal Owed)> StatsByMember()
+        => _members
+            .Select(m => (Member: m,
+                          Paid: _expenses.Where(e => e.PayerId == m.Id).Sum(e => e.Amount),
+                          Owed: ShareOf(m.Id)))
+            .OrderByDescending(x => x.Paid)
+            .ToList();
+
+    private List<(DateOnly Month, decimal Total)> StatsByMonth()
+        => _expenses
+            .GroupBy(e => new DateOnly(e.PaidAt.Year, e.PaidAt.Month, 1))
+            .Select(g => (Month: g.Key, Total: g.Sum(e => e.Amount)))
+            .OrderByDescending(x => x.Month)
+            .Take(12)
+            .ToList();
+
+    private decimal StatsMaxMonth()
+    {
+        var months = StatsByMonth();
+        return months.Count > 0 ? months.Max(x => x.Total) : 0m;
+    }
+
+    private decimal ShareOf(Guid memberId)
+    {
+        decimal total = 0m;
+        foreach (var e in _expenses)
+        {
+            var ps = _participantsByExpense.GetValueOrDefault(e.Id);
+            if (ps is null || ps.Count == 0) continue;
+            if (ps.Contains(memberId))
+            {
+                total += Math.Round(e.Amount / ps.Count, 2, MidpointRounding.AwayFromZero);
+            }
+        }
+        return total;
+    }
+
+    // ---------- Membres ----------
+
     private async Task AddMember()
     {
         if (string.IsNullOrWhiteSpace(_newMemberName)) return;
@@ -297,19 +771,14 @@ else
             _newMemberName = "";
             await Reload();
         }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
-        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
     }
 
     private async Task RenameMember(Member m)
     {
         var newName = await PromptDialog.AskAsync(DialogService,
-            title: "Renommer",
-            message: $"Nouveau prénom pour « {m.Name} » :",
-            initialValue: m.Name,
-            confirmLabel: "Renommer");
+            title: "Renommer", message: $"Nouveau prénom pour « {m.Name} » :",
+            initialValue: m.Name, confirmLabel: "Renommer");
         if (string.IsNullOrWhiteSpace(newName) || newName == m.Name) return;
         try
         {
@@ -317,15 +786,11 @@ else
             await Sb.UpdateMemberAsync(m.Id, newName, m.Color);
             await Reload();
         }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
-        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
     }
 
     private async Task ChangeMemberColor(Member m)
     {
-        // Cycle simple : prochaine couleur de la palette pas encore prise par les autres.
         var others = _members.Where(o => o.Id != m.Id).Select(o => o.Color);
         var next = MemberPalette.PickNext(others);
         try
@@ -334,10 +799,7 @@ else
             await Sb.UpdateMemberAsync(m.Id, m.Name, next);
             await Reload();
         }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
-        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
     }
 
     private async Task DeleteMember(Member m)
@@ -349,27 +811,23 @@ else
             if (expCount > 0 || trCount > 0)
             {
                 Snackbar.Add(
-                    $"Impossible : {m.Name} apparaît dans {expCount} dépense(s) et {trCount} remboursement(s). " +
-                    "Retire-le d'abord de ces lignes.",
-                    Severity.Warning,
-                    opt => opt.RequireInteraction = true);
+                    $"Impossible : {m.Name} apparaît dans {expCount} dépense(s) et {trCount} remboursement(s). Retire-le d'abord de ces lignes.",
+                    Severity.Warning, opt => opt.RequireInteraction = true);
                 return;
             }
 
             var ok = await ConfirmDialog.AskAsync(DialogService,
-                title: "Supprimer ce membre ?",
-                message: $"Supprimer définitivement « {m.Name} » du tricount ?",
+                title: "Supprimer ce membre ?", message: $"Supprimer définitivement « {m.Name} » du tricount ?",
                 confirmLabel: "Supprimer", color: Color.Error);
             if (!ok) return;
 
             await Sb.DeleteMemberAsync(m.Id);
             await Reload();
         }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
-        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
     }
+
+    // ---------- Dépenses / transferts ----------
 
     private async Task DeleteExpense(Expense e)
     {
@@ -384,10 +842,7 @@ else
             await Sb.DeleteExpenseAsync(e.Id);
             await Reload();
         }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
-        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
     }
 
     private async Task DeleteTransfer(Transfer t)
@@ -403,37 +858,228 @@ else
             await Sb.DeleteTransferAsync(t.Id);
             await Reload();
         }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
+    }
+
+    private void SettleUp(Settlement s)
+    {
+        var url = $"g/{Id}/transfer/new?from={s.FromMemberId}&to={s.ToMemberId}&amount={s.Amount.ToString(CultureInfo.InvariantCulture)}";
+        Nav.NavigateTo(url);
+    }
+
+    // ---------- Partage ----------
+
+    private async Task ShareLink()
+    {
+        var url = ShareUrl();
+        var canShare = await JS.InvokeAsync<bool>("quitto.canShare");
+        if (canShare)
+        {
+            var shared = await JS.InvokeAsync<bool>("quitto.share",
+                "Quitto", $"Rejoins le tricount « {_group?.Name} »", url);
+            if (shared) return;
+        }
+        var ok = await JS.InvokeAsync<bool>("quitto.copyToClipboard", url);
+        Snackbar.Add(ok ? "Lien copié." : "Échec de la copie.", ok ? Severity.Success : Severity.Warning);
+    }
+
+    private Task ShowQr() => QrCodeDialog.ShowAsync(DialogService, ShareUrl());
+
+    // ---------- PIN management ----------
+
+    private async Task ActivatePin()
+    {
+        if (_group is null) return;
+        try
+        {
+            var pin = PinGenerator.Generate();
+            // overrideSharePin = pin courant (null pour un groupe sans pin → policy USING
+            // accepte share_pin IS NULL). Mais après UPDATE, le row aura share_pin = nouveau.
+            // RLS sur UPDATE n'enforce pas le pin sur WITH CHECK, donc l'opération passe.
+            await Sb.SetGroupPinAsync(_group.Id, pin);
+            // À partir de maintenant, on doit envoyer le NOUVEAU pin sur les requêtes suivantes.
+            Session.Set(_group.Id, pin);
+            await Recent.RememberAsync(_group.Id, _group.Name, pin);
+            await Reload();
+            Snackbar.Add("PIN activé. Partage le nouveau lien à tes potes.", Severity.Success);
+            await QrCodeDialog.ShowAsync(DialogService, ShareUrl());
+        }
         catch (Exception ex)
         {
             Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
         }
     }
 
-    private void SettleUp(Settlement s)
+    private async Task RegeneratePin()
     {
-        // Settle-up shortcut : on file les valeurs en query params, AddTransfer pré-remplit.
-        var url = $"g/{Id}/transfer/new?from={s.FromMemberId}&to={s.ToMemberId}&amount={s.Amount.ToString(System.Globalization.CultureInfo.InvariantCulture)}";
-        Nav.NavigateTo(url);
-    }
-
-    private async Task ShareLink()
-    {
-        var url = Nav.Uri;
-        var canShare = await JS.InvokeAsync<bool>("quitto.canShare");
-        if (canShare)
+        if (_group is null || string.IsNullOrEmpty(_group.SharePin)) return;
+        var ok = await ConfirmDialog.AskAsync(DialogService,
+            title: "Régénérer le PIN ?",
+            message: "Tous les anciens liens cesseront de fonctionner. Tu devras renvoyer le nouveau lien à tes potes.",
+            confirmLabel: "Régénérer", color: Color.Warning);
+        if (!ok) return;
+        try
         {
-            var shared = await JS.InvokeAsync<bool>("quitto.share",
-                "Quitto",
-                $"Rejoins le tricount « {_group?.Name} »",
-                url);
-            if (shared) return;
-            // L'utilisateur a cancellé — on tombe sur la copie comme fallback.
+            var newPin = PinGenerator.Generate();
+            await Sb.SetGroupPinAsync(_group.Id, newPin);
+            Session.Set(_group.Id, newPin);
+            await Recent.RememberAsync(_group.Id, _group.Name, newPin);
+            await Reload();
+            Snackbar.Add("PIN régénéré.", Severity.Success);
+            await QrCodeDialog.ShowAsync(DialogService, ShareUrl());
         }
-        var ok = await JS.InvokeAsync<bool>("quitto.copyToClipboard", url);
-        Snackbar.Add(ok ? "Lien copié." : "Échec de la copie.", ok ? Severity.Success : Severity.Warning);
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
+        }
     }
 
-    private Task ShowQr() => QrCodeDialog.ShowAsync(DialogService, Nav.Uri);
+    private async Task DisablePin()
+    {
+        if (_group is null || string.IsNullOrEmpty(_group.SharePin)) return;
+        var ok = await ConfirmDialog.AskAsync(DialogService,
+            title: "Désactiver le PIN ?",
+            message: "Le tricount redeviendra accessible avec le seul UUID dans l'URL. " +
+                     "Si la publishable key fuite (repo public), un attaquant pourra plus facilement scanner.",
+            confirmLabel: "Désactiver", color: Color.Warning);
+        if (!ok) return;
+        try
+        {
+            await Sb.SetGroupPinAsync(_group.Id, null);
+            Session.Set(_group.Id, null);
+            await Recent.RememberAsync(_group.Id, _group.Name, null);
+            await Reload();
+            Snackbar.Add("PIN désactivé.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Échec : {ex.Message}", Severity.Error);
+        }
+    }
+
+    // ---------- Trash / Restore ----------
+
+    private async Task RestoreExpense(Expense e)
+    {
+        try
+        {
+            Session.Set(Id, _group?.SharePin);
+            await Sb.RestoreExpenseAsync(e.Id);
+            await Reload();
+            Snackbar.Add("Dépense restaurée.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
+    }
+
+    private async Task HardDeleteExpense(Expense e)
+    {
+        var ok = await ConfirmDialog.AskAsync(DialogService,
+            title: "Supprimer définitivement ?",
+            message: $"« {e.Description} » sera retirée de la base sans retour possible.",
+            confirmLabel: "Supprimer définitivement", color: Color.Error);
+        if (!ok) return;
+        try
+        {
+            Session.Set(Id, _group?.SharePin);
+            await Sb.HardDeleteExpenseAsync(e.Id);
+            await Reload();
+        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
+    }
+
+    private async Task RestoreTransfer(Transfer t)
+    {
+        try
+        {
+            Session.Set(Id, _group?.SharePin);
+            await Sb.RestoreTransferAsync(t.Id);
+            await Reload();
+            Snackbar.Add("Remboursement restauré.", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
+    }
+
+    private async Task HardDeleteTransfer(Transfer t)
+    {
+        var ok = await ConfirmDialog.AskAsync(DialogService,
+            title: "Supprimer définitivement ?",
+            message: $"Le remboursement de {FormatAmount(t.Amount)} sera retiré sans retour possible.",
+            confirmLabel: "Supprimer définitivement", color: Color.Error);
+        if (!ok) return;
+        try
+        {
+            Session.Set(Id, _group?.SharePin);
+            await Sb.HardDeleteTransferAsync(t.Id);
+            await Reload();
+        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
+    }
+
+    // ---------- Export / Backup / Restore ----------
+
+    private async Task ExportCsv()
+    {
+        if (_group is null) return;
+        try
+        {
+            var csv = CsvExporter.ExportExpenses(_group, _members, _expenses, _participantsByExpense);
+            var filename = $"quitto-{Slug(_group.Name)}-{DateTime.Today:yyyy-MM-dd}.csv";
+            await JS.InvokeVoidAsync("quitto.downloadFile", filename, csv, "text/csv;charset=utf-8");
+            Snackbar.Add($"Export CSV : {_expenses.Count} dépense(s).", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
+    }
+
+    private async Task ExportJson()
+    {
+        if (_group is null) return;
+        try
+        {
+            Session.Set(Id);
+            var backup = await Backup.ExportAsync(_group);
+            var json = Backup.Serialize(backup);
+            var filename = $"quitto-{Slug(_group.Name)}-{DateTime.Today:yyyy-MM-dd}.json";
+            await JS.InvokeVoidAsync("quitto.downloadFile", filename, json, "application/json");
+            Snackbar.Add($"Sauvegarde : {_expenses.Count} dépense(s), {_members.Count} membre(s).", Severity.Success);
+        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
+    }
+
+    private async Task OnRestoreFileSelected(InputFileChangeEventArgs e)
+    {
+        var file = e.File;
+        if (file is null) return;
+        try
+        {
+            await using var stream = file.OpenReadStream(maxAllowedSize: 5 * 1024 * 1024); // 5 MB
+            using var reader = new StreamReader(stream);
+            var json = await reader.ReadToEndAsync();
+
+            var backup = Backup.Deserialize(json);
+            if (backup is null || backup.Group is null)
+            {
+                Snackbar.Add("Fichier invalide.", Severity.Error);
+                return;
+            }
+
+            var ok = await ConfirmDialog.AskAsync(DialogService,
+                title: "Cloner ce tricount ?",
+                message: $"Va créer un nouveau tricount « {backup.Group.Name} (copie) » avec " +
+                         $"{backup.Members.Count} membre(s), {backup.Expenses.Count} dépense(s), " +
+                         $"{backup.Transfers.Count} remboursement(s). " +
+                         "Le tricount actuel n'est pas modifié.",
+                confirmLabel: "Cloner");
+            if (!ok) return;
+
+            var newId = await Backup.CloneAsync(backup);
+            await Recent.RememberAsync(newId, $"{backup.Group.Name} (copie)");
+            Snackbar.Add("Cloné.", Severity.Success);
+            Nav.NavigateTo($"g/{newId}");
+        }
+        catch (Exception ex) { Snackbar.Add($"Échec : {ex.Message}", Severity.Error); }
+    }
+
+    // ---------- Format helpers ----------
 
     private string FormatAmount(decimal amount)
         => $"{amount:N2} {SymbolOf(_group?.Currency ?? "EUR")}";
@@ -446,11 +1092,7 @@ else
 
     private static string SymbolOf(string code) => code switch
     {
-        "EUR" => "€",
-        "USD" => "$",
-        "GBP" => "£",
-        "CHF" => "₣",
-        _ => code
+        "EUR" => "€", "USD" => "$", "GBP" => "£", "CHF" => "₣", _ => code
     };
 
     private static string InitialsOf(string name)
@@ -463,6 +1105,25 @@ else
 
     private static string ColorOf(Member m)
         => string.IsNullOrEmpty(m.Color) ? MemberPalette.Colors[0] : m.Color;
+
+    private static string FormatRelative(DateTime utc)
+    {
+        var d = DateTime.UtcNow - utc;
+        if (d.TotalMinutes < 1) return "à l'instant";
+        if (d.TotalHours < 1)   return $"il y a {(int)d.TotalMinutes} min";
+        if (d.TotalDays < 1)    return $"il y a {(int)d.TotalHours} h";
+        if (d.TotalDays < 30)   return $"il y a {(int)d.TotalDays} j";
+        return utc.ToLocalTime().ToString("dd MMM yyyy");
+    }
+
+    private static string Slug(string s)
+    {
+        var lower = s.ToLowerInvariant();
+        var chars = lower.Select(c => char.IsLetterOrDigit(c) ? c : '-').ToArray();
+        var slug = new string(chars).Trim('-');
+        while (slug.Contains("--")) slug = slug.Replace("--", "-");
+        return string.IsNullOrEmpty(slug) ? "tricount" : slug;
+    }
 
     // Pas de Dispose() qui Clear la Session : Blazor instancie la page suivante AVANT
     // de disposer celle-ci, donc un Clear ici écraserait le Set fait par la page enfant

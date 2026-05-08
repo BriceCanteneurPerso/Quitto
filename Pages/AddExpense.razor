@@ -53,8 +53,10 @@ else
                         : $"Catégorie auto-détectée : {effective.Label}")
                     : $"Catégorie : {effective.Label} (manuel)")
             </MudText>
-            <MudMenu Icon="@Icons.Material.Filled.MoreVert" Size="Size.Small" Variant="Variant.Text"
-                     ActivationEvent="@MouseEvent.LeftClick">
+            @* MudMenu avec activator custom : on NE met PAS Icon/Size/Variant sur le
+               MudMenu lui-même (sinon conflit avec ActivatorContent et le clic n'ouvre
+               plus le menu). On laisse l'ActivatorContent porter tout le styling. *@
+            <MudMenu ActivationEvent="@MouseEvent.LeftClick" AnchorOrigin="Origin.BottomLeft">
                 <ActivatorContent>
                     <MudButton Size="Size.Small" Variant="Variant.Outlined"
                                EndIcon="@Icons.Material.Filled.ArrowDropDown">

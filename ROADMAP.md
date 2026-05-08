@@ -84,7 +84,7 @@ Liste de fonctionnalités pour piocher dedans à la demande, pas un ordre de pri
 - **S — Format locale FR.** `1 234,56 €` au lieu de `1234.56 €`. `CultureInfo.GetCultureInfo("fr-FR")` dans Program.cs.
 - **S — Couleur custom par membre.** Le champ `color` existe en base, on le sélectionne au create-member et on l'utilise sur les avatars / chips.
 - **M — Dark mode.** Pattern coffee → `ThemeService` qui écoute `prefers-color-scheme`, toggle manuel dans Settings.
-- **M — i18n FR/EN.** Pattern coffee (`LocalizationService` + dictionnaires JSON). Pas critique tant qu'on est seuls francophones.
+- **M — i18n FR/EN.** Pattern coffee (`LocalizationService` + dictionnaires JSON). Pas critique tant qu'on est seuls francophones. **Déféré explicitement de batch 4** : ~150 strings à extraire, valeur d'usage proche de 0 tant qu'aucun anglophone n'arrive sur le tricount. À reprendre quand le besoin se manifeste.
 - **M — Skeletons de chargement.** Remplacer les `MudProgressCircular` par des skeletons (`MudSkeleton`). Perçu plus rapide.
 
 ---

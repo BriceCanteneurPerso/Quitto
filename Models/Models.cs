@@ -10,6 +10,7 @@ public class Group
     [JsonPropertyName("id")]         public Guid Id { get; set; }
     [JsonPropertyName("name")]       public string Name { get; set; } = "";
     [JsonPropertyName("currency")]   public string Currency { get; set; } = "EUR";
+    [JsonPropertyName("share_pin")]  public string? SharePin { get; set; }
     [JsonPropertyName("created_at")] public DateTime CreatedAt { get; set; }
 }
 
@@ -33,6 +34,7 @@ public class Expense
     [JsonPropertyName("notes")]       public string? Notes { get; set; }
     [JsonPropertyName("paid_at")]     public DateOnly PaidAt { get; set; }
     [JsonPropertyName("created_at")]  public DateTime CreatedAt { get; set; }
+    [JsonPropertyName("deleted_at")]  public DateTime? DeletedAt { get; set; }
 }
 
 public class ExpenseParticipant
@@ -50,4 +52,5 @@ public class Transfer
     [JsonPropertyName("amount")]          public decimal Amount { get; set; }
     [JsonPropertyName("paid_at")]         public DateOnly PaidAt { get; set; }
     [JsonPropertyName("created_at")]      public DateTime CreatedAt { get; set; }
+    [JsonPropertyName("deleted_at")]      public DateTime? DeletedAt { get; set; }
 }

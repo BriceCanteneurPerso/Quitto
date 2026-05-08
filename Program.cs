@@ -38,5 +38,7 @@ builder.Services.AddScoped<GroupSession>();          // Détient le group id cou
 builder.Services.AddScoped<SupabaseClient>();        // Wrapper PostgREST.
 builder.Services.AddScoped<RecentGroupsService>();   // localStorage : liste des groupes visités.
 builder.Services.AddScoped<BalanceService>();        // Calcul des soldes + remboursements simplifiés.
+builder.Services.AddScoped<BackupService>();         // Snapshot JSON + clonage non-destructif.
+builder.Services.AddScoped<ThemeService>();          // Light/dark/auto, persisté en localStorage.
 
 await builder.Build().RunAsync();

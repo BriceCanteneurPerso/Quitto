@@ -1,8 +1,12 @@
 @*
     Composant racine : pose les providers globaux (theme/popover/dialog/snackbar)
-    puis monte le router.
+    puis monte le router. Initialise ThemeService au boot pour appliquer la prefé
+    sauvegardée en localStorage avant le premier rendu de page.
 *@
-<MudThemeProvider IsDarkMode="false" />
+@implements IDisposable
+@inject ThemeService Theme
+
+<MudThemeProvider IsDarkMode="@Theme.IsDarkMode" />
 <MudPopoverProvider />
 <MudDialogProvider />
 <MudSnackbarProvider />
@@ -19,3 +23,18 @@
         </LayoutView>
     </NotFound>
 </Router>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Theme.Changed += OnThemeChanged;
+        await Theme.InitializeAsync();
+    }
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Theme.Changed -= OnThemeChanged;
+    }
+}

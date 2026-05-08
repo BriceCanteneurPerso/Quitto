@@ -3,6 +3,11 @@ html, body {
     background: #f5f7f6;
 }
 
+/* MudBlazor pose body.mud-dark-mode quand le thème sombre est actif. */
+body.mud-dark-mode {
+    background: #0e1a14;
+}
+
 .page-container {
     max-width: 720px;
     margin: 0 auto;
@@ -63,9 +68,17 @@ html, body {
 .balance-positive { color: #1f6f54; font-weight: 600; }
 .balance-negative { color: #b53d3d; font-weight: 600; }
 .balance-zero     { color: #888; }
+body.mud-dark-mode .balance-positive { color: #4caf85; }
+body.mud-dark-mode .balance-negative { color: #ef6b6b; }
+body.mud-dark-mode .balance-zero     { color: #aaa; }
+
 .share-banner {
     display: flex; gap: 8px; align-items: center;
     padding: 8px 12px; border-radius: 8px;
     background: #e8f3ee; color: #1f6f54;
     font-size: 13px; margin-bottom: 12px;
+}
+body.mud-dark-mode .share-banner {
+    background: #163a2e;
+    color: #9bd5b9;
 }
